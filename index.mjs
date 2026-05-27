@@ -543,12 +543,20 @@ async function registerBlitzortungMqtt(blitzCallback, blitzArea) {
   client.on('message', (_, data) => {
     try {
       const json = decoder.decode(data);
-      const blitzData = JSON.parse(json);
-      if (blitzData.lat < blitzArea.minLat || blitzData.lon < blitzArea.minLon ||
-        blitzData.lat > blitzArea.maxLat || blitzData.lon > blitzArea.maxLon) {
+      const rawData = JSON.parse(json);
+      const lat = parseFloat(rawData.lat);
+      const lon = parseFloat(rawData.lon);
+
+      if (isNaN(lat) || isNaN(lon)) {
         return;
       }
-      blitzCallback(blitzData);
+
+      if (lat < blitzArea.minLat || lon < blitzArea.minLon ||
+        lat > blitzArea.maxLat || lon > blitzArea.maxLon) {
+        return;
+      }
+
+      blitzCallback({ ...rawData, lat, lon });
     } catch (err) {
       console.error('Error processing Blitzortung message:', err);
     }
