@@ -150,3 +150,35 @@ You can optionally override the configuration port via CLI argument:
 ```bash
 node index.mjs COM3
 ```
+
+---
+
+## Troubleshooting
+
+### 1. Serial Port Connection Issues
+* **Error: Port Busy / Locked**: Ensure no other application (like a terminal emulator, the MeshCore Web Flasher, or another instance of the bot) is currently accessing the serial port.
+* **Permission Denied (Linux)**: By default, normal users cannot read/write serial ports. You can grant access by adding your user to the `dialout` group:
+  ```bash
+  sudo usermod -aG dialout $USER
+  ```
+  *(Log out and log back in for changes to take effect.)*
+* **Automatic Port Detection**: If your configured port changes or is disconnected, the bot will attempt to automatically scan the system for ESP32 / USB-UART bridge devices at startup.
+
+### 2. Message Replies Do Not Work in Channels
+If the bot successfully responds to direct messages (DMs) but ignores commands sent in channels:
+* **Channel Name Mismatch**: Check that the channel name under `config.json` (`"channels": { "weather": "#weather" }`) matches the channel name configured on the device **exactly** (including case sensitivity and the `#` prefix).
+* **Verify Resolved Index**: Start the bot manually using `node index.mjs` and look at the logs when you send a message to the channel. The bot logs:
+  `Channel message details: message.channelIdx=X (type: ...), channels.weather.channelIdx=Y (type: ...)`
+  If the indices `X` and `Y` do not match, the bot will ignore the query and log:
+  `Ignored channel message on channel index X (not #weather channel index Y)`
+  Ensure the channel name matches exactly so the bot resolves it to the correct index.
+
+### 3. NWS API or Geocoding Failures
+* **403 Forbidden / API Blocks**: The National Weather Service (NWS) API requires a valid user-agent. If requests are blocked or fail, ensure the `"userAgent"` field in `config.json` contains a valid email address inside the identifier.
+* **OSM Geocoding Blocking**: If geocoding fails due to OSM Nominatim API rate limits or blocks (common in cloud VM environments), the bot automatically falls back to raw GPS coordinates or parses ZIP codes using `zippopotam.us` as a redundant service.
+
+### 4. Viewing Background Service Logs
+If you installed the bot as a systemd service, you can follow its live runtime logs using `journalctl`:
+```bash
+sudo journalctl -u weatherbot.service -f -n 50
+```
