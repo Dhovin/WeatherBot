@@ -214,12 +214,118 @@ function interpolate(str, data) {
   });
 }
 
+async function handleIncomingMessage(text, replyCallback) {
+  if (!text) return;
+  const cleanText = text.trim();
+  let zip = null;
+  
+  // Pattern 1: just a 5-digit number
+  if (/^\d{5}$/.test(cleanText)) {
+    zip = cleanText;
+  } else {
+    // Pattern 2: matches weather/wx commands (e.g. !weather 90210, /wx 10001, weather 30303)
+    const match = cleanText.match(/^[!/#]?(weather|wx)\s+(\d{5})$/i);
+    if (match) {
+      zip = match[2];
+    }
+  }
+
+  if (!zip) return; // Not a weather request
+
+  console.log(`Processing interactive weather request for ZIP: ${zip}`);
+  try {
+    // 1. Geocode ZIP code to coordinates
+    const searchUrl = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
+    const searchRes = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)'
+      }
+    });
+    if (!searchRes.ok) throw new Error(`Geocoding HTTP error ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    if (!searchData || searchData.length === 0) {
+      await replyCallback(`Error: Could not resolve ZIP code ${zip}`);
+      return;
+    }
+
+    const lat = parseFloat(searchData[0].lat);
+    const lon = parseFloat(searchData[0].lon);
+    
+    // Parse city name safely from displayName
+    const nameParts = searchData[0].display_name.split(',');
+    const city = nameParts[0] || '';
+    const state = nameParts[2] ? nameParts[2].trim() : (nameParts[1] ? nameParts[1].trim() : '');
+    const displayName = `${city}, ${state}`.replace(/,\s*$/, '');
+
+    // 2. Fetch NWS Points Metadata to resolve grid forecast endpoint
+    const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
+    const pointsRes = await fetch(pointsUrl, {
+      headers: {
+        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+        'Accept': 'application/geo+json'
+      }
+    });
+    if (!pointsRes.ok) throw new Error(`NWS points HTTP error ${pointsRes.status}`);
+    const pointsData = await pointsRes.json();
+    const forecastUrl = pointsData.properties.forecast;
+
+    // 3. Fetch Forecast Details
+    const forecastRes = await fetch(forecastUrl, {
+      headers: {
+        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+        'Accept': 'application/geo+json'
+      }
+    });
+    if (!forecastRes.ok) throw new Error(`NWS forecast HTTP error ${forecastRes.status}`);
+    const forecastData = await forecastRes.json();
+    const periods = forecastData.properties.periods;
+
+    if (!periods || periods.length === 0) {
+      await replyCallback(`Error: No forecast data found for ZIP ${zip}`);
+      return;
+    }
+
+    // 4. Format first 2 periods (e.g. Today/Tonight) for brief interactive reply
+    const selectedPeriods = periods.slice(0, 2);
+    const header = `🌦️ Weather for ${zip} (${displayName}):\n`;
+    const forecastText = header + selectedPeriods.map(p => `${p.name}: ${p.detailedForecast}`).join('\n');
+
+    // 5. Send back in chunks
+    const chunks = utils.splitStringToByteChunks(forecastText, 130);
+    for (const chunk of chunks) {
+      await replyCallback(chunk);
+      await utils.sleep(5000);
+    }
+  } catch (err) {
+    console.error(`Failed to handle weather request for ${zip}:`, err);
+    await replyCallback(`Error fetching weather for ZIP ${zip}. Please try again later.`);
+  }
+}
+
 async function onContactMessageReceived(message) {
   console.log('Received contact message:', message);
+  if (!message.text) return;
+
+  const contact = await connection.findContactByPublicKeyPrefix(message.pubKeyPrefix);
+  if (!contact) {
+    console.log("Did not find contact for received message");
+    return;
+  }
+
+  await handleIncomingMessage(message.text, async (replyText) => {
+    await connection.sendTextMessage(contact.publicKey, replyText, Constants.TxtTypes.Plain);
+    console.log(`Sent contact reply: ${replyText}`);
+  });
 }
 
 async function onChannelMessageReceived(message) {
   console.log('Received channel message:', message);
+  if (!message.text) return;
+
+  await handleIncomingMessage(message.text, async (replyText) => {
+    await connection.sendChannelTextMessage(message.channelIdx, replyText);
+    console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
+  });
 }
 
 async function sendWeather(date) {
