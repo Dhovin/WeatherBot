@@ -1,5 +1,5 @@
 import { Constants, NodeJSSerialConnection } from "@liamcottle/meshcore.js";
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import * as mqtt from 'mqtt';
 import * as utils from './utils.mjs';
 
@@ -59,6 +59,53 @@ let geoCache = {};
 let blitzBuffer = [];
 const meteoAlerts = {};
 let resolvedLocationName = '';
+
+const SUBS_FILE = './subscriptions.json';
+
+function readSubscriptions() {
+  if (!existsSync(SUBS_FILE)) {
+    return {};
+  }
+  try {
+    return JSON.parse(readFileSync(SUBS_FILE, 'utf-8'));
+  } catch (err) {
+    console.error('Error reading subscriptions.json:', err);
+    return {};
+  }
+}
+
+function writeSubscriptions(subs) {
+  try {
+    writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing subscriptions.json:', err);
+  }
+}
+
+async function addSubscription(publicKey, zipCode, displayName, lat, lon) {
+  const subs = readSubscriptions();
+  const key = Buffer.from(publicKey).toString('hex');
+  subs[key] = {
+    publicKeyHex: key,
+    zipCode,
+    displayName,
+    lat,
+    lon,
+    subscribedAt: Date.now()
+  };
+  writeSubscriptions(subs);
+}
+
+async function removeSubscription(publicKey) {
+  const subs = readSubscriptions();
+  const key = Buffer.from(publicKey).toString('hex');
+  if (subs[key]) {
+    delete subs[key];
+    writeSubscriptions(subs);
+    return true;
+  }
+  return false;
+}
 
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
@@ -402,13 +449,66 @@ function formatCompressedForecast(zip, periods) {
   return header + lines.join('\n');
 }
 
-async function handleIncomingMessage(text, replyCallback) {
+async function handleIncomingMessage(text, replyCallback, contact = null) {
   if (!text) return;
   let cleanText = text.trim();
   
   // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
   cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
   
+  const lowerText = cleanText.toLowerCase();
+
+  // 1. Handle Subscription Commands
+  if (lowerText.startsWith('subscribe')) {
+    if (!contact) {
+      await replyCallback('Error: Subscriptions must be requested via direct message.');
+      return;
+    }
+    const match = cleanText.match(/^subscribe\s+(\d{5})$/i);
+    if (!match) {
+      await replyCallback('Usage: subscribe [5-digit zip code]');
+      return;
+    }
+    const zip = match[1];
+    try {
+      const result = await resolveZip(zip);
+      
+      // Resolve NWS points metadata to retrieve the grid forecast endpoint
+      const pointsUrl = `https://api.weather.gov/points/${result.lat},${result.lon}`;
+      const pointsRes = await fetch(pointsUrl, {
+        headers: {
+          'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+          'Accept': 'application/geo+json'
+        }
+      });
+      if (!pointsRes.ok) throw new Error(`NWS points error ${pointsRes.status}`);
+      const pointsData = await pointsRes.json();
+      const forecastUrl = pointsData.properties.forecast;
+
+      await addSubscription(contact.publicKey, zip, result.displayName, result.lat, result.lon, forecastUrl);
+      await replyCallback(`Subscribed! You will receive daily forecasts for ${result.displayName} (${zip}) every day at ${config.weatherAlarm} local time.`);
+    } catch (err) {
+      console.error(`Subscription failed for ZIP ${zip}:`, err.message);
+      await replyCallback(`Error: Could not resolve ZIP code ${zip}. Subscription failed.`);
+    }
+    return;
+  }
+
+  if (lowerText === 'unsubscribe') {
+    if (!contact) {
+      await replyCallback('Error: Subscriptions must be managed via direct message.');
+      return;
+    }
+    const removed = await removeSubscription(contact.publicKey);
+    if (removed) {
+      await replyCallback('Unsubscribed. You will no longer receive daily forecasts.');
+    } else {
+      await replyCallback('You do not have an active subscription.');
+    }
+    return;
+  }
+
+  // 2. Handle standard weather/wx zip code queries
   let zip = null;
   
   // Pattern 1: just a 5-digit number
@@ -488,7 +588,7 @@ async function onContactMessageReceived(message) {
   await handleIncomingMessage(message.text, async (replyText) => {
     await connection.sendTextMessage(contact.publicKey, replyText, Constants.TxtTypes.Plain);
     console.log(`Sent contact reply: ${replyText}`);
-  });
+  }, contact);
 }
 
 async function onChannelMessageReceived(message) {
@@ -514,14 +614,70 @@ async function onChannelMessageReceived(message) {
   });
 }
 
+async function sendSubscriberForecast(publicKey, sub) {
+  try {
+    console.log(`Sending daily forecast to subscriber ${sub.displayName} (${sub.zipCode})...`);
+    
+    let forecastUrl = sub.forecastUrl;
+    if (!forecastUrl) {
+      // Fallback in case old subscription format doesn't have forecastUrl
+      const pointsUrl = `https://api.weather.gov/points/${sub.lat},${sub.lon}`;
+      const pointsData = await fetchNWS(pointsUrl);
+      forecastUrl = pointsData.properties.forecast;
+    }
+
+    const forecastData = await fetchNWS(forecastUrl);
+    const periods = forecastData.properties.periods;
+    if (!periods || periods.length === 0) {
+      console.warn(`No forecast periods available for subscriber ${sub.zipCode}`);
+      return;
+    }
+
+    // 2. Format message 1: Synopsis of today's weather
+    const firstPeriod = periods[0];
+    const synopsis = `${firstPeriod.name}: ${firstPeriod.detailedForecast}`;
+    const synopsisMsg = utils.shortenToBytes(synopsis, 145);
+
+    // 3. Format message 2: 3-day forecast
+    const forecastText = formatCompressedForecast(sub.zipCode, periods);
+
+    // 4. Send both messages to the subscriber via direct message (DM)
+    await connection.sendTextMessage(publicKey, synopsisMsg, Constants.TxtTypes.Plain);
+    await utils.sleep(5000); // 5-second pause between messages to prevent collision
+    await connection.sendTextMessage(publicKey, forecastText, Constants.TxtTypes.Plain);
+    
+    console.log(`Successfully sent subscriber forecast to ${sub.displayName}`);
+  } catch (err) {
+    console.error(`Failed to send subscriber forecast to ${sub.zipCode}:`, err.message);
+  }
+}
+
 async function sendWeather(date) {
   console.log('Starting scheduled daily weather broadcast...');
-  const weatherText = await getWeather();
-  const chunks = utils.splitStringToByteChunks(weatherText, 130);
-  if (chunks.length === 0) return;
+  // 1. Send channel forecast
+  try {
+    const weatherText = await getWeather();
+    const chunks = utils.splitStringToByteChunks(weatherText, 130);
+    if (chunks.length > 0) {
+      for (const message of chunks) {
+        await sendAlert(message, channels.weather);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to send main weather broadcast:', err.message);
+  }
 
-  for (const message of chunks) {
-    await sendAlert(message, channels.weather);
+  // 2. Send subscriber forecasts
+  const subs = readSubscriptions();
+  const subKeys = Object.keys(subs);
+  if (subKeys.length > 0) {
+    console.log(`Processing ${subKeys.length} subscriber weather forecasts...`);
+    for (const key of subKeys) {
+      const sub = subs[key];
+      const subPublicKey = Buffer.from(sub.publicKeyHex, 'hex');
+      await sendSubscriberForecast(subPublicKey, sub);
+      await utils.sleep(10000); // 10 second pause between subscribers to prevent TX flood
+    }
   }
 }
 
