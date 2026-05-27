@@ -83,8 +83,14 @@ if [ -t 1 ]; then
   echo "--------------------------------------------------"
   cd "$DIR"
 
-  # Extract defaults safely using Node.js
-  CURRENT_PORT=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port)")
+  # Attempt to auto-detect an active serial port on Linux, fallback to config value
+  DETECTED_PORT=$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
+  if [ -n "$DETECTED_PORT" ]; then
+    CURRENT_PORT="$DETECTED_PORT"
+  else
+    CURRENT_PORT=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port)")
+  fi
+
   CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).zipCode)")
   CURRENT_EMAIL="contact@example.com"
 
