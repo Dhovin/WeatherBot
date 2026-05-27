@@ -291,21 +291,62 @@ function getEmojiForForecast(forecastText) {
   if (text.includes('rain') || text.includes('shower') || text.includes('drizzle')) return '🌧️';
   if (text.includes('fog') || text.includes('mist') || text.includes('haze')) return '🌫️';
   if (text.includes('wind') || text.includes('breezy') || text.includes('windy')) return '💨';
+  if (text.includes('mostly sunny') || text.includes('partly sunny') || text.includes('mostly clear') || text.includes('partly cloudy')) return '🌤';
   if (text.includes('sunny') || text.includes('clear')) return '☀️';
   if (text.includes('cloud') || text.includes('overcast') || text.includes('gloomy')) return '☁️';
   return '⛅'; // Default fallback
 }
 
-// Formats NWS forecast periods to a compressed string with emojis
-function formatCompressedForecast(zip, displayName, periods, numPeriods = 2) {
-  const selectedPeriods = periods.slice(0, numPeriods);
-  const locationHeader = displayName ? ` (${displayName})` : '';
-  const header = `🌦️ Wx ${zip ? zip : ''}${locationHeader}:\n`;
-  const lines = selectedPeriods.map(p => {
-    const emoji = getEmojiForForecast(p.shortForecast);
-    const wind = p.windSpeed && p.windDirection ? ` Wind ${p.windDirection} ${p.windSpeed}` : '';
-    return `${emoji} ${p.name}: ${p.shortForecast}. Temp ${p.temperature}°${p.temperatureUnit}.${wind}`;
+// Formats NWS forecast periods to a compressed string with emojis (today + next 2 days)
+function formatCompressedForecast(zip, periods) {
+  const groups = new Map();
+  for (const p of periods) {
+    const dateStr = p.startTime.slice(0, 10); // "YYYY-MM-DD"
+    if (!groups.has(dateStr)) {
+      groups.set(dateStr, {
+        dateStr,
+        daytime: null,
+        nighttime: null
+      });
+    }
+    const group = groups.get(dateStr);
+    if (p.isDaytime) {
+      group.daytime = p;
+    } else {
+      group.nighttime = p;
+    }
+  }
+
+  // Get the first 3 groups
+  const sortedGroups = Array.from(groups.values()).slice(0, 3);
+  
+  const header = `Wx ${zip ? zip : ''}:\n`;
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
+
+  const lines = sortedGroups.map((group, index) => {
+    let label = '';
+    if (index === 0) {
+      label = 'today';
+    } else {
+      const dateObj = new Date(group.dateStr + "T00:00:00Z");
+      const dayIndex = dateObj.getUTCDay();
+      label = weekdays[dayIndex];
+    }
+
+    const forecastText = (group.daytime || group.nighttime)?.shortForecast || '';
+    const emoji = getEmojiForForecast(forecastText);
+
+    const parts = [];
+    if (group.daytime) {
+      parts.push(`hi: ${group.daytime.temperature}`);
+    }
+    if (group.nighttime) {
+      parts.push(`low: ${group.nighttime.temperature}`);
+    }
+
+    return `${label}: ${emoji} ${parts.join(' ')}`;
   });
+
   return header + lines.join('\n');
 }
 
@@ -367,8 +408,8 @@ async function handleIncomingMessage(text, replyCallback) {
       return;
     }
 
-    // 4. Format first 2 periods (e.g. Today/Tonight) for brief compressed interactive reply
-    const forecastText = formatCompressedForecast(zip, displayName, periods, 2);
+    // 4. Format 3-day compressed forecast
+    const forecastText = formatCompressedForecast(zip, periods);
 
     // 5. Send back in chunks
     const chunks = utils.splitStringToByteChunks(forecastText, 130);
@@ -442,8 +483,8 @@ async function getWeather() {
       return 'No forecast periods available.';
     }
 
-    // Take the top 3 periods and format compressed with emojis
-    return formatCompressedForecast(config.zipCode, resolvedLocationName, periods, 3);
+    // Format 3-day compressed forecast
+    return formatCompressedForecast(config.zipCode, periods);
   } catch (err) {
     console.error('Failed to get NWS forecast:', err);
     return `Weather Forecast Unavailable: ${err.message}`;
