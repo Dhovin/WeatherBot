@@ -443,15 +443,22 @@ async function onChannelMessageReceived(message) {
   console.log('Received channel message:', message);
   if (!message.text) return;
 
+  const weatherIdx = channels.weather?.channelIdx;
+  console.log(`Channel message details: message.channelIdx=${message.channelIdx} (type: ${typeof message.channelIdx}), channels.weather.channelIdx=${weatherIdx} (type: ${typeof weatherIdx})`);
+
   // Only reply to messages on the #weather channel
-  if (message.channelIdx !== channels.weather?.channelIdx) {
-    console.log(`Ignored channel message on channel index ${message.channelIdx} (not #weather channel index ${channels.weather?.channelIdx})`);
+  if (message.channelIdx !== weatherIdx) {
+    console.log(`Ignored channel message on channel index ${message.channelIdx} (not #weather channel index ${weatherIdx})`);
     return;
   }
 
   await handleIncomingMessage(message.text, async (replyText) => {
-    await connection.sendChannelTextMessage(message.channelIdx, replyText);
-    console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
+    try {
+      await connection.sendChannelTextMessage(message.channelIdx, replyText);
+      console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
+    } catch (err) {
+      console.error(`Failed to send channel reply to index ${message.channelIdx}:`, err);
+    }
   });
 }
 
