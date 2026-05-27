@@ -10,24 +10,61 @@ SUDO_USER_NAME=${SUDO_USER:-$USER}
 
 # Detect directory of the script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 if [ ! -f "$DIR/package.json" ]; then
-  # Try to detect via systemd service WorkingDirectory
-  SYSTEMD_DIR=""
-  if [ -f "/etc/systemd/system/weatherbot.service" ]; then
-    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/weatherbot.service | cut -d= -f2 | xargs)
-  fi
-  if [ -z "$SYSTEMD_DIR" ]; then
-    SYSTEMD_DIR=$(systemctl show weatherbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
+  RESOLVED_DIR=""
+
+  # 1. Check if the current working directory is the repo
+  if [ -f "$(pwd)/package.json" ]; then
+    RESOLVED_DIR="$(pwd)"
   fi
 
-  if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
-    DIR="$SYSTEMD_DIR"
-  elif [ -f "$(pwd)/package.json" ]; then
-    DIR="$(pwd)"
-  elif [ -f "/opt/weatherbot/package.json" ]; then
-    DIR="/opt/weatherbot"
+  # 2. Check systemd service configuration file
+  if [ -z "$RESOLVED_DIR" ] && [ -f "/etc/systemd/system/weatherbot.service" ]; then
+    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/weatherbot.service | cut -d= -f2 | xargs)
+    if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
+      RESOLVED_DIR="$SYSTEMD_DIR"
+    fi
+  fi
+
+  # 3. Query active systemd service
+  if [ -z "$RESOLVED_DIR" ]; then
+    SYSTEMD_DIR=$(systemctl show weatherbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
+    if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
+      RESOLVED_DIR="$SYSTEMD_DIR"
+    fi
+  fi
+
+  # 4. Check if there is a running node index.mjs process
+  if [ -z "$RESOLVED_DIR" ]; then
+    NODE_PID=$(pgrep -f "node index.mjs" | head -n 1)
+    if [ -n "$NODE_PID" ]; then
+      PROC_DIR=$(readlink -f /proc/$NODE_PID/cwd 2>/dev/null)
+      if [ -n "$PROC_DIR" ] && [ -f "$PROC_DIR/package.json" ]; then
+        RESOLVED_DIR="$PROC_DIR"
+      fi
+    fi
+  fi
+
+  # 5. Check common installation directories
+  if [ -z "$RESOLVED_DIR" ]; then
+    for path in "/opt/weatherbot" \
+                "/home/$SUDO_USER_NAME/weatherbot" \
+                "/home/$SUDO_USER_NAME/Documents/GitHub/weatherbot" \
+                "/home/$SUDO_USER_NAME/WeatherBot" \
+                "/home/$SUDO_USER_NAME/Documents/GitHub/WeatherBot" \
+                "/root/weatherbot"; do
+      if [ -f "$path/package.json" ]; then
+        RESOLVED_DIR="$path"
+        break
+      fi
+    done
+  fi
+
+  # Apply the resolved directory or fallback
+  if [ -n "$RESOLVED_DIR" ]; then
+    DIR="$RESOLVED_DIR"
   else
-    # Fallback to current directory, it will fail but we have no choice
     DIR="$(pwd)"
   fi
 fi
