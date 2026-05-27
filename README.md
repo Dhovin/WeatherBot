@@ -8,7 +8,7 @@ A Node.js weather alert and lightning tracking bot for MeshCore networks, specif
 -   **Minimized LoRa Transmission**: Forecasts are aggregated by weekday and compressed using emojis (e.g., `today: ⛈️ low: 65`, `Wed: ⛈️ hi: 80 low: 64`) to fit a full 3-day report within a single 150-character MeshCore packet.
 -   **Active Weather Alerts & Clearance**: Polls NWS active alerts for your exact GPS coordinates, broadcasts matching warnings (e.g., Tornado, Severe Thunderstorm, Flood Warnings), and automatically posts a **Clearance Notification** (e.g., `🟢 CLEAR: Tornado Warning has ended/been cleared...`) when warnings expire or get canceled.
 -   **Lightning Proximity Alerts**: Monitors global lightning strikes in real-time using the Blitzortung MQTT network, reporting active cells in your area with heading and distance (e.g., `Lightning: Arlington, VA (10km East)`).
--   **Interactive Queries**: Users can send a message directly to the bot or on a monitored channel containing a US ZIP code (e.g., `90210`, `!weather 90210`, or `/wx 30303`), and the bot will dynamically geocode the ZIP code and reply with the local forecast for that location.
+-   **Interactive Queries**: Users can send a message directly to the bot or on a monitored channel containing a US ZIP code (e.g., `90210`, `!weather 90210`, or `/wx 30303`) to query the local forecast, or send `version`/`info` to get the bot's current software version.
 
 ## Requirements
 
@@ -112,6 +112,18 @@ If you have already cloned the repository manually, run the installation script 
     ```bash
     sudo ./uninstall.sh
     ```
+
+### Upgrading the Bot
+
+To upgrade the bot to the latest version (incorporating code updates, dependency changes, and service restarts), run the upgrade script:
+
+```bash
+# Make the upgrade script executable:
+chmod +x update.sh
+
+# Run the upgrade:
+sudo ./update.sh
+```
 
 ---
 

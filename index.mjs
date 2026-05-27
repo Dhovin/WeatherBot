@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import * as mqtt from 'mqtt';
 import * as utils from './utils.mjs';
 
+const VERSION = "1.1.0";
+
 // Load config safely without ESM experimental warning
 const config = JSON.parse(readFileSync(new URL('./config.json', import.meta.url)));
 
@@ -107,6 +109,7 @@ async function removeSubscription(publicKey) {
   return false;
 }
 
+console.log(`US WeatherBot v${VERSION} starting...`);
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
 
@@ -205,7 +208,7 @@ connection.on(Constants.PushCodes.MsgWaiting, async () => {
 
 // Helper for fetching NWS API endpoints
 async function fetchNWS(url) {
-  const userAgent = config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)';
+  const userAgent = config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`;
   const res = await fetch(url, {
     headers: {
       'User-Agent': userAgent,
@@ -244,7 +247,7 @@ async function resolveZip(zip) {
   const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
   const res = await fetch(url, {
     headers: {
-      'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)'
+      'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`
     }
   });
   if (!res.ok) throw new Error(`OSM HTTP error ${res.status}`);
@@ -458,6 +461,12 @@ async function handleIncomingMessage(text, replyCallback, contact = null) {
   
   const lowerText = cleanText.toLowerCase();
 
+  // Handle Version/Info Commands
+  if (lowerText === 'version' || lowerText === 'info') {
+    await replyCallback(`US WeatherBot v${VERSION}`);
+    return;
+  }
+
   // 1. Handle Subscription Commands
   if (lowerText.startsWith('subscribe')) {
     if (!contact) {
@@ -477,7 +486,7 @@ async function handleIncomingMessage(text, replyCallback, contact = null) {
       const pointsUrl = `https://api.weather.gov/points/${result.lat},${result.lon}`;
       const pointsRes = await fetch(pointsUrl, {
         headers: {
-          'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+          'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
           'Accept': 'application/geo+json'
         }
       });
@@ -536,7 +545,7 @@ async function handleIncomingMessage(text, replyCallback, contact = null) {
     const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
     const pointsRes = await fetch(pointsUrl, {
       headers: {
-        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+        'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
         'Accept': 'application/geo+json'
       }
     });
@@ -547,7 +556,7 @@ async function handleIncomingMessage(text, replyCallback, contact = null) {
     // 3. Fetch Forecast Details
     const forecastRes = await fetch(forecastUrl, {
       headers: {
-        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)',
+        'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
         'Accept': 'application/geo+json'
       }
     });

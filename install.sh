@@ -127,11 +127,12 @@ if [ -t 1 ]; then
 fi
 
 echo "Creating systemd service file..."
+VERSION=$(grep -o '"version": "[^"]*' "$DIR/package.json" | grep -o '[0-9.]*$' || echo "1.1.0")
 SERVICE_FILE="/etc/systemd/system/weatherbot.service"
 
 cat <<EOF > "$SERVICE_FILE"
 [Unit]
-Description=MeshCore US Weather Bot Service
+Description=MeshCore US Weather Bot Service v$VERSION
 After=network.target
 
 [Service]
