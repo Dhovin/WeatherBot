@@ -84,11 +84,15 @@ if [ -t 1 ]; then
   cd "$DIR"
 
   # Attempt to auto-detect an active serial port on Linux, fallback to config value
-  DETECTED_PORT=$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
+  DETECTED_PORT=$(ls /dev/serial/by-id/* /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
   if [ -n "$DETECTED_PORT" ]; then
     CURRENT_PORT="$DETECTED_PORT"
   else
     CURRENT_PORT=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port)")
+    # If the default in config is a Windows COM port, but we are running on Linux, override default suggestion to /dev/ttyACM0
+    if [[ "$CURRENT_PORT" =~ ^COM[0-9]+ ]]; then
+      CURRENT_PORT="/dev/ttyACM0"
+    fi
   fi
 
   CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).zipCode)")
