@@ -1,0 +1,11 @@
+{
+  "name": "meshcore-weatherbot-us",
+  "version": "1.0.0",
+  "description": "Weather bot for MeshCore in the US market using NWS API",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@liamcottle/meshcore.js": "^1.10.0",
+    "mqtt": "^5.14.0"
+  }
+}

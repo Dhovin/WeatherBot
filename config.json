@@ -1,0 +1,62 @@
+{
+  "port": "COM11",
+  "weatherAlarm": "06:00",
+  "userAgent": "MeshCoreWeatherBot/1.0 (contact@example.com)",
+  "zipCode": "20001",
+  "myPosition": {
+    "lat": 38.9072,
+    "lon": -77.0369
+  },
+  "channels": {
+    "alerts": "#weather",
+    "weather": "#weather"
+  },
+  "timers": {
+    "blitzCollection": 600000,
+    "meteoAlerts": 600000
+  },
+  "blitzRadiusMiles": 10,
+  "blitzArea": {
+    "minLat": 37.9072,
+    "minLon": -78.5369,
+    "maxLat": 39.9072,
+    "maxLon": -75.5369
+  },
+  "compasNames": {
+    "N": "North",
+    "NE": "North-East",
+    "E": "East",
+    "SE": "South-East",
+    "S": "South",
+    "SW": "South-West",
+    "W": "West",
+    "NW": "North-West"
+  },
+  "meteoAlerts": {
+    "enabled": true,
+    "timeout": 180,
+    "severityFilter": [
+      "severe",
+      "extreme"
+    ],
+    "certaintyFilter": [
+      "observed",
+      "likely"
+    ],
+    "messageTemplate": "{event} Alert for {region}\nEffective: {start} to {end}\nSeverity: {severity}\n{headline}",
+    "severity": {
+      "unknown": "Unknown",
+      "minor": "Minor",
+      "moderate": "Moderate",
+      "severe": "Severe",
+      "extreme": "Extreme"
+    },
+    "certainty": {
+      "observed": "Observed",
+      "likely": "Likely",
+      "possible": "Possible",
+      "unlikely": "Unlikely",
+      "unknown": "Unknown"
+    }
+  }
+}
