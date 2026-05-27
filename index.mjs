@@ -203,7 +203,9 @@ async function resolveZip(zip) {
 async function checkMeteoAlerts() {
   const timeoutMs = config.meteoAlerts.timeout * 60 * 1000;
   Object.keys(meteoAlerts).forEach(key => {
-    if (meteoAlerts[key] < Date.now() - timeoutMs) {
+    const entry = meteoAlerts[key];
+    const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
+    if (timestamp < Date.now() - timeoutMs) {
       delete meteoAlerts[key];
     }
   });
@@ -212,17 +214,19 @@ async function checkMeteoAlerts() {
     const url = `https://api.weather.gov/alerts/active?point=${config.myPosition.lat},${config.myPosition.lon}`;
     const data = await fetchNWS(url);
 
-    if (!data.features || data.features.length === 0) {
+    if (!data.features) {
       return;
     }
 
+    const activeIds = new Set();
     const warnings = [];
     for (const feature of data.features) {
       const props = feature.properties;
       if (!props) continue;
 
       const id = props.identifier || feature.id;
-      
+      if (id) activeIds.add(id);
+
       const endTime = props.expires ? new Date(props.expires) : (props.ends ? new Date(props.ends) : null);
       if (endTime && endTime < Date.now()) {
         continue;
@@ -268,9 +272,42 @@ async function checkMeteoAlerts() {
         });
 
         await sendAlert(message, channels.alerts);
-        meteoAlerts[item.id] = Date.now();
+        meteoAlerts[item.id] = {
+          timestamp: Date.now(),
+          event: item.event,
+          region: item.region,
+          cleared: false
+        };
         await utils.sleep(30 * 1000);
       }
+    }
+
+    // Detect and send cleared warnings
+    for (const id of Object.keys(meteoAlerts)) {
+      const cached = meteoAlerts[id];
+      if (activeIds.has(id)) continue;
+
+      const isAlreadyCleared = typeof cached === 'object' ? cached.cleared : false;
+      if (isAlreadyCleared) continue;
+
+      const event = typeof cached === 'object' ? cached.event : 'Weather Alert';
+      const region = typeof cached === 'object' ? cached.region : 'Area';
+
+      const clearMessage = `🟢 CLEAR: ${event} has ended/been cleared for ${region}.`;
+      await sendAlert(clearMessage, channels.alerts);
+
+      if (typeof cached === 'object') {
+        cached.cleared = true;
+        cached.timestamp = Date.now(); // reset timestamp so it stays in cache for the timeout period
+      } else {
+        meteoAlerts[id] = {
+          timestamp: Date.now(),
+          event,
+          region,
+          cleared: true
+        };
+      }
+      await utils.sleep(30 * 1000);
     }
   } catch (err) {
     console.error('Failed to check meteo alerts:', err);
