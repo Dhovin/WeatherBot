@@ -61,6 +61,19 @@ if [ ! -f "$DIR/package.json" ]; then
     done
   fi
 
+  # 6. Perform a fast, pruned filesystem search in user's home and /opt
+  if [ -z "$RESOLVED_DIR" ]; then
+    FOUND_PATH=$(find "/home/$SUDO_USER_NAME" "/opt" -maxdepth 5 \( -name ".git" -o -name ".cache" -o -name ".npm" -o -name ".local" -o -name "node_modules" \) -prune -o -name "package.json" -print 2>/dev/null | while read -r pf; do
+      if grep -q '"name": "meshcore-weatherbot-us"' "$pf" 2>/dev/null; then
+        dirname "$pf"
+        break
+      fi
+    done)
+    if [ -n "$FOUND_PATH" ]; then
+      RESOLVED_DIR="$FOUND_PATH"
+    fi
+  fi
+
   # Apply the resolved directory or fallback
   if [ -n "$RESOLVED_DIR" ]; then
     DIR="$RESOLVED_DIR"
