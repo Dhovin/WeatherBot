@@ -182,7 +182,7 @@ export async function shaSumHex(message) {
   return bufferToHexString(hash);
 }
 
-export function setAlarm(time, callback) {
+export function setAlarm(time, callback, timeZone = 'UTC') {
   const [hoursStr, minutesStr] = time.split(':');
   const hours = parseInt(hoursStr, 10);
   const minutes = parseInt(minutesStr, 10);
@@ -190,9 +190,29 @@ export function setAlarm(time, callback) {
   const seenAlarms = {};
   setInterval(() => {
     const date = new Date();
+    
+    let targetHours, targetMinutes;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timeZone,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const parts = formatter.formatToParts(date);
+      const h = parts.find(p => p.type === 'hour')?.value;
+      const m = parts.find(p => p.type === 'minute')?.value;
+      targetHours = parseInt(h, 10);
+      targetMinutes = parseInt(m, 10);
+    } catch (err) {
+      // Fallback to system local time
+      targetHours = date.getHours();
+      targetMinutes = date.getMinutes();
+    }
+
     const currentDate = date.toISOString().split('T')[0];
-    if (date.getHours() === hours && date.getMinutes() === minutes && !seenAlarms[currentDate]) {
-      console.debug('alarm triggered', date);
+    if (targetHours === hours && targetMinutes === minutes && !seenAlarms[currentDate]) {
+      console.debug(`alarm triggered for timezone ${timeZone}`, date);
       seenAlarms[currentDate] = 1;
       callback(date);
     }

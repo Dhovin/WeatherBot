@@ -98,6 +98,21 @@ connection.on('connected', async () => {
     console.log(`Calculated lightning bounding box (${radiusMiles} miles range around ${lat.toFixed(4)}, ${lon.toFixed(4)}):`, config.blitzArea);
   }
 
+  // Resolve NWS metadata and timezone
+  let timeZone = 'UTC';
+  if (config.myPosition) {
+    try {
+      const pointsUrl = `https://api.weather.gov/points/${config.myPosition.lat},${config.myPosition.lon}`;
+      console.log(`Resolving NWS metadata and timezone for position...`);
+      const pointsData = await fetchNWS(pointsUrl);
+      cachedForecastUrl = pointsData.properties.forecast;
+      timeZone = pointsData.properties.timeZone || 'UTC';
+      console.log(`Resolved local timezone: ${timeZone}`);
+    } catch (err) {
+      console.error('Failed to resolve NWS metadata or timezone at startup:', err.message);
+    }
+  }
+
   for (const [channelType, channelName] of Object.entries(config.channels)) {
     channels[channelType] = await connection.findChannelByName(channelName);
     if (!channels[channelType]) {
@@ -111,7 +126,7 @@ connection.on('connected', async () => {
   await registerBlitzortungMqtt(blitzHandler, config.blitzArea);
 
   // Daily weather forecast alarm
-  utils.setAlarm(config.weatherAlarm, sendWeather);
+  utils.setAlarm(config.weatherAlarm, sendWeather, timeZone);
 
   // Lightning check interval
   setInterval(blitzWarning, config.timers.blitzCollection);
