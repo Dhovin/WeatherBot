@@ -76,8 +76,8 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Interactive Configuration Wizard (skipped in non-interactive piped sessions)
-if [ -t 0 ]; then
+# Interactive Configuration Wizard (skipped in non-interactive sessions)
+if [ -t 1 ]; then
   echo "--------------------------------------------------"
   echo "           US WeatherBot Config Wizard            "
   echo "--------------------------------------------------"
@@ -88,13 +88,13 @@ if [ -t 0 ]; then
   CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).zipCode)")
   CURRENT_EMAIL="contact@example.com"
 
-  read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT
+  read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT < /dev/tty
   USER_PORT=${USER_PORT:-$CURRENT_PORT}
 
-  read -p "Enter your local US ZIP code [$CURRENT_ZIP]: " USER_ZIP
+  read -p "Enter your local US ZIP code [$CURRENT_ZIP]: " USER_ZIP < /dev/tty
   USER_ZIP=${USER_ZIP:-$CURRENT_ZIP}
 
-  read -p "Enter email address (required for NWS API User-Agent) [$CURRENT_EMAIL]: " USER_EMAIL
+  read -p "Enter email address (required for NWS API User-Agent) [$CURRENT_EMAIL]: " USER_EMAIL < /dev/tty
   USER_EMAIL=${USER_EMAIL:-$CURRENT_EMAIL}
 
   # Update config.json
