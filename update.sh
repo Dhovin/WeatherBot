@@ -11,8 +11,18 @@ SUDO_USER_NAME=${SUDO_USER:-$USER}
 # Detect directory of the script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 if [ ! -f "$DIR/package.json" ]; then
-  # Not running from the weatherbot directory, try auto-detecting
-  if [ -f "$(pwd)/package.json" ]; then
+  # Try to detect via systemd service WorkingDirectory
+  SYSTEMD_DIR=""
+  if [ -f "/etc/systemd/system/weatherbot.service" ]; then
+    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/weatherbot.service | cut -d= -f2 | xargs)
+  fi
+  if [ -z "$SYSTEMD_DIR" ]; then
+    SYSTEMD_DIR=$(systemctl show weatherbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
+  fi
+
+  if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
+    DIR="$SYSTEMD_DIR"
+  elif [ -f "$(pwd)/package.json" ]; then
     DIR="$(pwd)"
   elif [ -f "/opt/weatherbot/package.json" ]; then
     DIR="/opt/weatherbot"
