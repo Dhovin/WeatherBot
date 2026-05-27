@@ -89,8 +89,10 @@ if [ -t 1 ]; then
     CURRENT_PORT="$DETECTED_PORT"
   else
     CURRENT_PORT=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port)")
+    # Strip any carriage returns or trailing spaces
+    CURRENT_PORT=$(echo "$CURRENT_PORT" | tr -d '\r' | tr -d ' ')
     # If the default in config is a Windows COM port, but we are running on Linux, override default suggestion to /dev/ttyACM0
-    if [[ "$CURRENT_PORT" =~ ^COM[0-9]+ ]]; then
+    if [[ "$CURRENT_PORT" == COM* ]] || [[ "$CURRENT_PORT" == com* ]]; then
       CURRENT_PORT="/dev/ttyACM0"
     fi
   fi
