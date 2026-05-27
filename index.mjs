@@ -6,7 +6,45 @@ import * as utils from './utils.mjs';
 // Load config safely without ESM experimental warning
 const config = JSON.parse(readFileSync(new URL('./config.json', import.meta.url)));
 
-const port = process.argv[2] ?? config.port;
+// Auto-detect serial port if the configured one is not available
+async function resolveSerialPort(configuredPort) {
+  try {
+    const { SerialPort } = await import('serialport');
+    const ports = await SerialPort.list();
+
+    if (ports.length === 0) {
+      return configuredPort;
+    }
+
+    // 1. If configured port exists, use it
+    if (ports.some(p => p.path === configuredPort)) {
+      return configuredPort;
+    }
+
+    console.warn(`Configured port "${configuredPort}" not found. Auto-detecting...`);
+
+    // 2. Filter for USB serial ports (contain vendorId, productId, or serialNumber)
+    const usbPorts = ports.filter(p => p.vendorId || p.productId || p.serialNumber);
+
+    if (usbPorts.length > 0) {
+      // Prioritize known ESP32 / USB UART VIDs
+      const espPort = usbPorts.find(p => {
+        const vid = (p.vendorId || '').toLowerCase();
+        return vid === '303a' || vid === '239a' || vid === '10c4' || vid === '1a86';
+      });
+
+      const selectedPort = espPort ? espPort.path : usbPorts[0].path;
+      console.log(`Auto-detected MeshCore USB device on port: "${selectedPort}"`);
+      return selectedPort;
+    }
+  } catch (err) {
+    console.warn("Serial port auto-detection failed:", err.message);
+  }
+  return configuredPort;
+}
+
+const configuredPort = process.argv[2] ?? config.port;
+const port = await resolveSerialPort(configuredPort);
 
 const channels = {
   alerts: null,
