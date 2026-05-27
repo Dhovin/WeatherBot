@@ -78,17 +78,19 @@ Configure your location, serial port, and alert behavior by editing `config.json
 
 The bot includes scripts to easily install and run it as a background service on Linux that auto-starts on system boot and restarts automatically if it crashes.
 
+During installation, an interactive **Configuration Wizard** will guide you through entering your **Serial Port**, **ZIP Code**, and **NWS User-Agent email**, dynamically writing them to `config.json` and setting permissions.
+
 ### Option A: One-Liner Installation (via curl)
 
-You can download and run the installer directly using `curl`. This standalone mode will automatically clone the repository into `/opt/weatherbot`, install packages, and register the systemd service:
+You can download and run the installer directly using `curl`. This standalone mode will automatically clone the repository into `/opt/weatherbot`, run the Configuration Wizard, install dependencies, and register the systemd service:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/dhovi/weatherbot/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/install.sh | sudo bash
 ```
 
 To uninstall:
 ```bash
-curl -sSL https://raw.githubusercontent.com/dhovi/weatherbot/main/uninstall.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/uninstall.sh | sudo bash
 ```
 
 ### Option B: Local Installation
@@ -100,7 +102,7 @@ If you have already cloned the repository manually, run the installation script 
     chmod +x install.sh uninstall.sh
     ```
 
-2.  Run the installer:
+2.  Run the installer (which will start the Configuration Wizard):
     ```bash
     sudo ./install.sh
     ```

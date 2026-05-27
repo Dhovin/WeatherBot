@@ -51,7 +51,7 @@ if [ ! -f "$DIR/package.json" ] && [ ! -f "$(pwd)/package.json" ]; then
   # Clone repo if it hasn't been cloned already
   if [ ! -f "$INSTALL_DIR/package.json" ]; then
     echo "Cloning repository to $INSTALL_DIR..."
-    sudo -u "$SUDO_USER_NAME" git clone https://github.com/dhovi/weatherbot.git "$INSTALL_DIR"
+    sudo -u "$SUDO_USER_NAME" git clone https://github.com/Dhovin/WeatherBot.git "$INSTALL_DIR"
     if [ $? -ne 0 ]; then
       echo "Error: Failed to clone repository."
       exit 1
@@ -74,6 +74,44 @@ sudo -u "$SUDO_USER_NAME" npm install --prefix "$DIR"
 if [ $? -ne 0 ]; then
   echo "Error: Failed to install npm packages."
   exit 1
+fi
+
+# Interactive Configuration Wizard (skipped in non-interactive piped sessions)
+if [ -t 0 ]; then
+  echo "--------------------------------------------------"
+  echo "           US WeatherBot Config Wizard            "
+  echo "--------------------------------------------------"
+  cd "$DIR"
+
+  # Extract defaults safely using Node.js
+  CURRENT_PORT=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port)")
+  CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).zipCode)")
+  CURRENT_EMAIL="contact@example.com"
+
+  read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT
+  USER_PORT=${USER_PORT:-$CURRENT_PORT}
+
+  read -p "Enter your local US ZIP code [$CURRENT_ZIP]: " USER_ZIP
+  USER_ZIP=${USER_ZIP:-$CURRENT_ZIP}
+
+  read -p "Enter email address (required for NWS API User-Agent) [$CURRENT_EMAIL]: " USER_EMAIL
+  USER_EMAIL=${USER_EMAIL:-$CURRENT_EMAIL}
+
+  # Update config.json
+  $NODE_PATH -e "
+    import fs from 'fs';
+    const config = JSON.parse(fs.readFileSync('config.json'));
+    config.port = process.argv[1];
+    config.zipCode = process.argv[2];
+    config.userAgent = 'MeshCoreWeatherBot/1.0 (' + process.argv[3] + ')';
+    fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+  " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL"
+
+  # Reset permissions so the non-root user can still edit it
+  chown "$SUDO_USER_NAME:$SUDO_USER_NAME" "config.json"
+
+  echo "Configuration updated successfully!"
+  echo "--------------------------------------------------"
 fi
 
 echo "Creating systemd service file..."

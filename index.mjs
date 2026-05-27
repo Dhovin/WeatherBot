@@ -20,6 +20,7 @@ const seen = {
 let geoCache = {};
 let blitzBuffer = [];
 const meteoAlerts = {};
+let resolvedLocationName = '';
 
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
@@ -32,24 +33,12 @@ connection.on('connected', async () => {
     try {
       const zip = config.zipCode.toString().trim();
       console.log(`Resolving ZIP code "${zip}" to coordinates...`);
-      const searchUrl = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
-      const searchRes = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)'
-        }
-      });
-      if (!searchRes.ok) throw new Error(`HTTP ${searchRes.status}`);
-      const results = await searchRes.json();
-      if (results && results.length > 0) {
-        const lat = parseFloat(results[0].lat);
-        const lon = parseFloat(results[0].lon);
-        console.log(`Resolved ZIP code ${zip} to coordinates: ${lat}, ${lon}`);
-        config.myPosition = { lat, lon };
-      } else {
-        console.warn(`Could not resolve coordinates for ZIP code ${zip}. Using manual coordinates from config.`);
-      }
+      const result = await resolveZip(zip);
+      console.log(`Resolved ZIP code ${zip} to coordinates: ${result.lat}, ${result.lon} (${result.displayName})`);
+      resolvedLocationName = result.displayName;
+      config.myPosition = { lat: result.lat, lon: result.lon };
     } catch (err) {
-      console.error(`Failed to geocode ZIP code ${config.zipCode}:`, err);
+      console.error(`Failed to geocode ZIP code ${config.zipCode}:`, err.message);
       console.warn('Falling back to manual coordinates from config.');
     }
   }
@@ -129,6 +118,48 @@ async function fetchNWS(url) {
   }
 
   return res.json();
+}
+
+// Dual-redundant US ZIP Code geocoder (Zippopotam -> OSM Nominatim)
+async function resolveZip(zip) {
+  // Try zippopotam.us first (unauthenticated, fast, no cloud IP block)
+  try {
+    const url = `https://api.zippopotam.us/us/${zip}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.places && data.places.length > 0) {
+        const place = data.places[0];
+        const lat = parseFloat(place.latitude);
+        const lon = parseFloat(place.longitude);
+        const displayName = `${place['place name']}, ${place['state abbreviation']}`;
+        return { lat, lon, displayName };
+      }
+    }
+  } catch (err) {
+    console.warn(`Zippopotam lookup failed for ZIP ${zip}, trying Nominatim...`, err.message);
+  }
+
+  // Fallback to OSM Nominatim
+  const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)'
+    }
+  });
+  if (!res.ok) throw new Error(`OSM HTTP error ${res.status}`);
+  const data = await res.json();
+  if (data && data.length > 0) {
+    const lat = parseFloat(data[0].lat);
+    const lon = parseFloat(data[0].lon);
+    const nameParts = data[0].display_name.split(',');
+    const city = nameParts[0] || '';
+    const state = nameParts[2] ? nameParts[2].trim() : (nameParts[1] ? nameParts[1].trim() : '');
+    const displayName = `${city}, ${state}`.replace(/,\s*$/, '');
+    return { lat, lon, displayName };
+  }
+
+  throw new Error(`Could not resolve ZIP code ${zip}`);
 }
 
 async function checkMeteoAlerts() {
@@ -214,9 +245,39 @@ function interpolate(str, data) {
   });
 }
 
+// Maps weather descriptors to emojis for short, high-density LoRa transmission
+function getEmojiForForecast(forecastText) {
+  const text = (forecastText || '').toLowerCase();
+  if (text.includes('thunder') || text.includes('storm')) return '⛈️';
+  if (text.includes('snow') || text.includes('ice') || text.includes('sleet') || text.includes('freeze') || text.includes('flurry')) return '❄️';
+  if (text.includes('rain') || text.includes('shower') || text.includes('drizzle')) return '🌧️';
+  if (text.includes('fog') || text.includes('mist') || text.includes('haze')) return '🌫️';
+  if (text.includes('wind') || text.includes('breezy') || text.includes('windy')) return '💨';
+  if (text.includes('sunny') || text.includes('clear')) return '☀️';
+  if (text.includes('cloud') || text.includes('overcast') || text.includes('gloomy')) return '☁️';
+  return '⛅'; // Default fallback
+}
+
+// Formats NWS forecast periods to a compressed string with emojis
+function formatCompressedForecast(zip, displayName, periods, numPeriods = 2) {
+  const selectedPeriods = periods.slice(0, numPeriods);
+  const locationHeader = displayName ? ` (${displayName})` : '';
+  const header = `🌦️ Wx ${zip ? zip : ''}${locationHeader}:\n`;
+  const lines = selectedPeriods.map(p => {
+    const emoji = getEmojiForForecast(p.shortForecast);
+    const wind = p.windSpeed && p.windDirection ? ` Wind ${p.windDirection} ${p.windSpeed}` : '';
+    return `${emoji} ${p.name}: ${p.shortForecast}. Temp ${p.temperature}°${p.temperatureUnit}.${wind}`;
+  });
+  return header + lines.join('\n');
+}
+
 async function handleIncomingMessage(text, replyCallback) {
   if (!text) return;
-  const cleanText = text.trim();
+  let cleanText = text.trim();
+  
+  // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
+  cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
+  
   let zip = null;
   
   // Pattern 1: just a 5-digit number
@@ -234,28 +295,11 @@ async function handleIncomingMessage(text, replyCallback) {
 
   console.log(`Processing interactive weather request for ZIP: ${zip}`);
   try {
-    // 1. Geocode ZIP code to coordinates
-    const searchUrl = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
-    const searchRes = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': config.userAgent || 'MeshCoreWeatherBot/1.0 (contact@example.com)'
-      }
-    });
-    if (!searchRes.ok) throw new Error(`Geocoding HTTP error ${searchRes.status}`);
-    const searchData = await searchRes.json();
-    if (!searchData || searchData.length === 0) {
-      await replyCallback(`Error: Could not resolve ZIP code ${zip}`);
-      return;
-    }
-
-    const lat = parseFloat(searchData[0].lat);
-    const lon = parseFloat(searchData[0].lon);
-    
-    // Parse city name safely from displayName
-    const nameParts = searchData[0].display_name.split(',');
-    const city = nameParts[0] || '';
-    const state = nameParts[2] ? nameParts[2].trim() : (nameParts[1] ? nameParts[1].trim() : '');
-    const displayName = `${city}, ${state}`.replace(/,\s*$/, '');
+    // 1. Geocode ZIP code to coordinates using dual-redundant resolver
+    const result = await resolveZip(zip);
+    const lat = result.lat;
+    const lon = result.lon;
+    const displayName = result.displayName;
 
     // 2. Fetch NWS Points Metadata to resolve grid forecast endpoint
     const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
@@ -285,10 +329,8 @@ async function handleIncomingMessage(text, replyCallback) {
       return;
     }
 
-    // 4. Format first 2 periods (e.g. Today/Tonight) for brief interactive reply
-    const selectedPeriods = periods.slice(0, 2);
-    const header = `🌦️ Weather for ${zip} (${displayName}):\n`;
-    const forecastText = header + selectedPeriods.map(p => `${p.name}: ${p.detailedForecast}`).join('\n');
+    // 4. Format first 2 periods (e.g. Today/Tonight) for brief compressed interactive reply
+    const forecastText = formatCompressedForecast(zip, displayName, periods, 2);
 
     // 5. Send back in chunks
     const chunks = utils.splitStringToByteChunks(forecastText, 130);
@@ -321,6 +363,12 @@ async function onContactMessageReceived(message) {
 async function onChannelMessageReceived(message) {
   console.log('Received channel message:', message);
   if (!message.text) return;
+
+  // Only reply to messages on the #weather channel
+  if (message.channelIdx !== channels.weather?.channelIdx) {
+    console.log(`Ignored channel message on channel index ${message.channelIdx} (not #weather channel index ${channels.weather?.channelIdx})`);
+    return;
+  }
 
   await handleIncomingMessage(message.text, async (replyText) => {
     await connection.sendChannelTextMessage(message.channelIdx, replyText);
@@ -356,9 +404,8 @@ async function getWeather() {
       return 'No forecast periods available.';
     }
 
-    // Take the top 3 periods (e.g., Today, Tonight, Tomorrow)
-    const selectedPeriods = periods.slice(0, 3);
-    return selectedPeriods.map(p => `${p.name}: ${p.detailedForecast}`).join('\n');
+    // Take the top 3 periods and format compressed with emojis
+    return formatCompressedForecast(config.zipCode, resolvedLocationName, periods, 3);
   } catch (err) {
     console.error('Failed to get NWS forecast:', err);
     return `Weather Forecast Unavailable: ${err.message}`;
