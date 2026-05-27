@@ -11,7 +11,13 @@ SUDO_USER_NAME=${SUDO_USER:-$USER}
 # Detect directory of the script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 if [ -z "$DIR" ] || [ "$DIR" = "/dev" ]; then
-  DIR="$(pwd)"
+  if [ -f "$(pwd)/package.json" ]; then
+    DIR="$(pwd)"
+  elif [ -f "/opt/weatherbot/package.json" ]; then
+    DIR="/opt/weatherbot"
+  else
+    DIR="$(pwd)"
+  fi
 fi
 
 echo "--------------------------------------------------"

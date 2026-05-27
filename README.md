@@ -89,6 +89,11 @@ You can download and run the installer directly using `curl`. This standalone mo
 curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/install.sh | sudo bash
 ```
 
+To upgrade/update:
+```bash
+curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/update.sh | sudo bash
+```
+
 To uninstall:
 ```bash
 curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/uninstall.sh | sudo bash
