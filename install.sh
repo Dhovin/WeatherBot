@@ -97,7 +97,7 @@ if [ -t 1 ]; then
     fi
   fi
 
-  CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).zipCode)")
+  CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.weather?.zipCode || cfg.zipCode || '')")
   CURRENT_EMAIL="contact@example.com"
 
   read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT < /dev/tty
@@ -114,8 +114,10 @@ if [ -t 1 ]; then
     import fs from 'fs';
     const config = JSON.parse(fs.readFileSync('config.json'));
     config.port = process.argv[1];
-    config.zipCode = process.argv[2];
-    config.userAgent = 'MeshCoreWeatherBot/1.0 (' + process.argv[3] + ')';
+    if (!config.modules) config.modules = {};
+    if (!config.modules.weather) config.modules.weather = {};
+    config.modules.weather.zipCode = process.argv[2];
+    config.modules.weather.userAgent = 'MeshCoreWeatherBot/1.1.0 (' + process.argv[3] + ')';
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
   " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL"
 
@@ -139,7 +141,7 @@ After=network.target
 Type=simple
 User=$SUDO_USER_NAME
 WorkingDirectory=$DIR
-ExecStart=$NODE_PATH index.mjs
+ExecStart=$NODE_PATH bin/meshbot.mjs start
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production

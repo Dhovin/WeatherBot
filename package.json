@@ -4,8 +4,14 @@
   "description": "Weather bot for MeshCore in the US market using NWS API",
   "type": "module",
   "main": "index.mjs",
+  "bin": {
+    "meshbot": "./bin/meshbot.mjs"
+  },
+  "scripts": {
+    "cli": "node bin/meshbot.mjs"
+  },
   "dependencies": {
-    "@liamcottle/meshcore.js": "^1.10.0",
-    "mqtt": "^5.14.0"
+    "@liamcottle/meshcore.js": "1.13.0",
+    "mqtt": "5.15.1"
   }
 }

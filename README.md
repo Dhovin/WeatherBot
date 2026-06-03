@@ -20,66 +20,91 @@ A Node.js weather alert and lightning tracking bot for MeshCore networks, specif
 
 ## Configuration (`config.json`)
 
-Configure your location, serial port, and alert behavior by editing `config.json`:
+MeshBot operates as a Host Bot controller loading separate Module Plugins. General connection settings are at the root level, and module-specific configurations are placed inside the `"modules"` object.
+
+Configure your device port, active channels, and modules by editing `config.json`:
 
 ```json
 {
-  "port": "/dev/ttyACM0", // The serial port for your MeshCore USB device (e.g., COM3 on Windows)
-  "weatherAlarm": "06:00", // Time of day to broadcast the daily forecast (24-hour HH:MM format)
-  "userAgent": "MeshCoreWeatherBot/1.0 (your-email@example.com)", // NWS API requires a valid User-Agent
-  "zipCode": "20001", // US ZIP code for auto-geocoding (replaces myPosition and blitzArea if set)
-  "myPosition": {
-    "lat": 38.9072, // Your decimal latitude (fallback if zipCode is empty)
-    "lon": -77.0369 // Your decimal longitude (fallback if zipCode is empty)
-  },
+  "port": "COM11", // The serial port for your MeshCore device (e.g. COM3 or /dev/ttyACM0)
   "channels": {
-    "alerts": "#weather", // MeshCore channel to broadcast lightning and weather alerts to
-    "weather": "#weather" // MeshCore channel to broadcast the scheduled forecast to
+    "alerts": "#weather",
+    "weather": "#weather",
+    "test": "#test",
+    "testing": "#testing"
   },
-  "timers": {
-    "blitzCollection": 600000, // Time window (in ms) to group lightning strikes (10 mins)
-    "meteoAlerts": 600000 // How often (in ms) to poll the NWS alerts API (10 mins)
-  },
-  "blitzRadiusMiles": 10, // Lightning tracking radius in miles (replaces blitzArea if set)
-  "blitzArea": { // Bounding box for lightning reporting (fallback if blitzRadiusMiles or zipCode is empty)
-    "minLat": 37.9072,
-    "minLon": -78.5369,
-    "maxLat": 39.9072,
-    "maxLon": -75.5369
-  },
-  "compasNames": {
-    "N": "North",
-    "NE": "North-East",
-    "E": "East",
-    "SE": "South-East",
-    "S": "South",
-    "SW": "South-West",
-    "W": "West",
-    "NW": "North-West"
-  },
-  "meteoAlerts": {
-    "enabled": true,
-    "timeout": 180, // Suppress repeating alerts for this many minutes (3 hours)
-    "severityFilter": ["severe", "extreme"], // Which NWS alert severities to report
-    "certaintyFilter": ["observed", "likely"], // Which NWS alert certainties to report
-    "messageTemplate": "{event} Alert for {region}\nEffective: {start} to {end}\nSeverity: {severity}\n{headline}"
+  "enabledModules": [
+    "weather",
+    "testing"
+  ],
+  "modules": {
+    "weather": {
+      "weatherAlarm": "06:00", // Daily forecast broadcast time (24-hour format)
+      "userAgent": "MeshCoreWeatherBot/1.1.0 (contact@example.com)", // Required for NWS API policy
+      "zipCode": "20001", // US ZIP code for auto-geocoding (replaces myPosition and blitzArea if set)
+      "myPosition": {
+        "lat": 38.9072,
+        "lon": -77.0369
+      },
+      "timers": {
+        "blitzCollection": 600000,
+        "meteoAlerts": 600000
+      },
+      "blitzRadiusMiles": 10,
+      "blitzArea": {
+        "minLat": 37.9072,
+        "minLon": -78.5369,
+        "maxLat": 39.9072,
+        "maxLon": -75.5369
+      },
+      "compasNames": {
+        "N": "North", "NE": "North-East", "E": "East", "SE": "South-East",
+        "S": "South", "SW": "South-West", "W": "West", "NW": "North-West"
+      },
+      "meteoAlerts": {
+        "enabled": true,
+        "timeout": 180, // Suppress repeating alerts for 3 hours
+        "severityFilter": ["severe", "extreme"],
+        "certaintyFilter": ["observed", "likely"],
+        "messageTemplate": "{event} Alert for {region}\nEffective: {start} to {end}\nSeverity: {severity}\n{headline}"
+      }
+    },
+    "testing": {}
   }
 }
 ```
 
 > [!TIP]
-> **Easy Location Setup**: If you set the `"zipCode"` parameter to a US ZIP code, the bot will automatically resolve the GPS coordinates at startup and populate `"myPosition"`. Additionally, by configuring `"blitzRadiusMiles"` (defaults to 10 miles), the bot will automatically calculate a precise bounding box (`"blitzArea"`) centered on your position, adjusting for latitude. You do not need to manually enter any coordinates or bounding boxes!
+> **Easy Location Setup**: If you set the `"zipCode"` parameter under `"modules.weather"`, the bot will automatically resolve the GPS coordinates at startup and populate `"myPosition"`. Additionally, by configuring `"blitzRadiusMiles"` (defaults to 10 miles), the bot will automatically calculate a precise bounding box (`"blitzArea"`) centered on your position, adjusting for latitude.
 
 > [!IMPORTANT]
-> **NWS API Policy**: To request weather data, the NWS API requires a custom `User-Agent` header that identifies your bot and includes contact information (such as an email address). Please ensure you update the `userAgent` field in `config.json` with your email.
+> **NWS API Policy**: To request weather data, the NWS API requires a custom `User-Agent` header that identifies your bot and includes contact information (such as an email address). Please ensure you update the `userAgent` field under `"modules.weather"` in `config.json` with your email.
+
+---
+
+## MeshBot CLI Tool (`meshbot`)
+
+The bot includes a unified command-line tool `meshbot` to manage the lifecycle, configure settings, run service daemons, and perform updates.
+
+### Commands
+
+*   `meshbot start [port]`: Starts the bot host runtime (and connects to the serial device).
+*   `meshbot list`: Lists all currently enabled/active modules.
+*   `meshbot config`: Runs the interactive configuration wizard for core connection settings (serial port and enabled modules).
+*   `meshbot weather`: Runs the interactive configuration wizard for the Weather module (ZIP code, alert toggles, alarm time, and NWS User-Agent email).
+*   `meshbot service <action>`: Manages the Linux systemd background service:
+    *   `meshbot service install`: Installs and registers the systemd daemon.
+    *   `meshbot service uninstall`: Removes the systemd daemon.
+    *   `meshbot service status`: Checks active service logs and status.
+    *   `meshbot service restart`: Restarts the background service.
+*   `meshbot update`: Upgrades the bot (pulls code from Git and updates dependencies).
+*   `meshbot help`: Displays usage instructions.
 
 ---
 
 ## Linux Background Service Setup (systemd)
 
-The bot includes scripts to easily install and run it as a background service on Linux that auto-starts on system boot and restarts automatically if it crashes.
-
-During installation, an interactive **Configuration Wizard** will guide you through entering your **Serial Port**, **ZIP Code**, and **NWS User-Agent email**, dynamically writing them to `config.json` and setting permissions.
+You can install MeshBot as a background service on Linux that auto-starts on system boot and restarts automatically if it crashes.
 
 ### Option A: One-Liner Installation (via curl)
 
@@ -89,66 +114,23 @@ You can download and run the installer directly using `curl`. This standalone mo
 curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/install.sh | sudo bash
 ```
 
-To upgrade/update:
-```bash
-curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/update.sh | sudo bash
-```
-
-To uninstall:
-```bash
-curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/uninstall.sh | sudo bash
-```
+To update or uninstall, you can use the CLI or run scripts:
+- **Update**: `sudo meshbot update`
+- **Uninstall**: `sudo meshbot service uninstall`
 
 ### Option B: Local Installation
 
-If you have already cloned the repository manually, run the installation script directly from the project directory:
+If you have already cloned the repository manually, run the installation script directly:
 
 1.  Make the scripts executable:
     ```bash
-    chmod +x install.sh uninstall.sh
+    chmod +x install.sh uninstall.sh update.sh
     ```
 
 2.  Run the installer (which will start the Configuration Wizard):
     ```bash
     sudo ./install.sh
     ```
-
-3.  To uninstall:
-    ```bash
-    sudo ./uninstall.sh
-    ```
-
-### Upgrading the Bot
-
-To upgrade the bot to the latest version (incorporating code updates, dependency changes, and service restarts), run the upgrade script:
-
-```bash
-# Make the upgrade script executable:
-chmod +x update.sh
-
-# Run the upgrade:
-sudo ./update.sh
-```
-
----
-
-### Service Management
-
-Once installed, you can manage the background service using:
-
-```bash
-# Check service logs/status:
-sudo systemctl status weatherbot.service
-
-# Stop the service:
-sudo systemctl stop weatherbot.service
-
-# Start the service:
-sudo systemctl start weatherbot.service
-
-# Restart the service:
-sudo systemctl restart weatherbot.service
-```
 
 ---
 
@@ -159,12 +141,19 @@ sudo systemctl restart weatherbot.service
 npm install
 ```
 
-### 2. Run the bot:
+### 2. Link/Run via CLI:
+You can link the binary to run `meshbot` globally:
 ```bash
-node index.mjs
+npm link
+meshbot start
 ```
 
-You can optionally override the configuration port via CLI argument:
+Or run via the local script runner:
+```bash
+npm run cli -- start
+```
+
+Or execute directly with Node:
 ```bash
 node index.mjs COM3
 ```

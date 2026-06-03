@@ -1,6 +1,5 @@
 import { Constants, NodeJSSerialConnection } from "@liamcottle/meshcore.js";
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import * as mqtt from 'mqtt';
+import { readFileSync } from 'fs';
 import * as utils from './utils.mjs';
 
 const VERSION = "1.1.0";
@@ -14,27 +13,17 @@ async function resolveSerialPort(configuredPort) {
     const { SerialPort } = await import('serialport');
     const ports = await SerialPort.list();
 
-    if (ports.length === 0) {
-      return configuredPort;
-    }
-
-    // 1. If configured port exists, use it
-    if (ports.some(p => p.path === configuredPort)) {
-      return configuredPort;
-    }
+    if (ports.length === 0) return configuredPort;
+    if (ports.some(p => p.path === configuredPort)) return configuredPort;
 
     console.warn(`Configured port "${configuredPort}" not found. Auto-detecting...`);
-
-    // 2. Filter for USB serial ports (contain vendorId, productId, or serialNumber)
     const usbPorts = ports.filter(p => p.vendorId || p.productId || p.serialNumber);
 
     if (usbPorts.length > 0) {
-      // Prioritize known ESP32 / USB UART VIDs
       const espPort = usbPorts.find(p => {
         const vid = (p.vendorId || '').toLowerCase();
         return vid === '303a' || vid === '239a' || vid === '10c4' || vid === '1a86';
       });
-
       const selectedPort = espPort ? espPort.path : usbPorts[0].path;
       console.log(`Auto-detected MeshCore USB device on port: "${selectedPort}"`);
       return selectedPort;
@@ -48,157 +37,104 @@ async function resolveSerialPort(configuredPort) {
 const configuredPort = process.argv[2] ?? config.port;
 const port = await resolveSerialPort(configuredPort);
 
-const channels = {
-  alerts: null,
-  weather: null
-};
-
-const seen = {
-  blitz: {},
-};
-
-let geoCache = {};
-let blitzBuffer = [];
-const meteoAlerts = {};
-let resolvedLocationName = '';
-
-const SUBS_FILE = './subscriptions.json';
-
-function readSubscriptions() {
-  if (!existsSync(SUBS_FILE)) {
-    return {};
-  }
-  try {
-    return JSON.parse(readFileSync(SUBS_FILE, 'utf-8'));
-  } catch (err) {
-    console.error('Error reading subscriptions.json:', err);
-    return {};
-  }
-}
-
-function writeSubscriptions(subs) {
-  try {
-    writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing subscriptions.json:', err);
-  }
-}
-
-async function addSubscription(publicKey, zipCode, displayName, lat, lon) {
-  const subs = readSubscriptions();
-  const key = Buffer.from(publicKey).toString('hex');
-  subs[key] = {
-    publicKeyHex: key,
-    zipCode,
-    displayName,
-    lat,
-    lon,
-    subscribedAt: Date.now()
-  };
-  writeSubscriptions(subs);
-}
-
-async function removeSubscription(publicKey) {
-  const subs = readSubscriptions();
-  const key = Buffer.from(publicKey).toString('hex');
-  if (subs[key]) {
-    delete subs[key];
-    writeSubscriptions(subs);
-    return true;
-  }
-  return false;
-}
-
 console.log(`US WeatherBot v${VERSION} starting...`);
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
 
+const channels = {};
+const activeModules = [];
+
+const host = {
+  VERSION,
+  config,
+  connection,
+  channels,
+  utils,
+  
+  async sendDM(publicKey, text) {
+    await connection.sendTextMessage(publicKey, text, Constants.TxtTypes.Plain);
+  },
+  
+  async sendChannelMessage(channelIdx, text) {
+    await connection.sendChannelTextMessage(channelIdx, text);
+  },
+  
+  async findChannelByName(name) {
+    return await connection.findChannelByName(name);
+  }
+};
+
+async function dispatchMessage(text, replyCallback, contact = null, info = {}) {
+  if (!text) return;
+  let cleanText = text.trim();
+  
+  // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
+  cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
+  const lowerText = cleanText.toLowerCase();
+
+  // Core Host Commands
+  if (lowerText === 'version' || lowerText === 'info') {
+    await replyCallback(`US WeatherBot v${VERSION}`);
+    return;
+  }
+
+  // Route to active modules
+  for (const mod of activeModules) {
+    try {
+      if (typeof mod.handleMessage === 'function') {
+        await mod.handleMessage(cleanText, replyCallback, contact, info);
+      }
+    } catch (err) {
+      console.error(`Error in module [${mod.name}] handling message:`, err);
+    }
+  }
+}
+
 connection.on('connected', async () => {
   console.log(`Connected to ${port}`);
 
-  // Resolve ZIP code to GPS coordinates if provided
-  if (config.zipCode && config.zipCode.toString().trim() !== "") {
-    try {
-      const zip = config.zipCode.toString().trim();
-      console.log(`Resolving ZIP code "${zip}" to coordinates...`);
-      const result = await resolveZip(zip);
-      console.log(`Resolved ZIP code ${zip} to coordinates: ${result.lat}, ${result.lon} (${result.displayName})`);
-      resolvedLocationName = result.displayName;
-      config.myPosition = { lat: result.lat, lon: result.lon };
-    } catch (err) {
-      console.error(`Failed to geocode ZIP code ${config.zipCode}:`, err.message);
-      console.warn('Falling back to manual coordinates from config.');
+  // Resolve channels configured at the root level (forgivingly)
+  if (config.channels) {
+    for (const [channelType, channelName] of Object.entries(config.channels)) {
+      const resolvedChannel = await connection.findChannelByName(channelName);
+      if (resolvedChannel) {
+        channels[channelType] = resolvedChannel;
+        console.log(`Resolved channel "${channelType}" as "${channelName}" (index: ${resolvedChannel.channelIdx})`);
+      } else {
+        console.warn(`Warning: Configured channel "${channelType}" ("${channelName}") not found on device.`);
+      }
     }
   }
 
-  // Calculate dynamic blitzArea bounding box if myPosition and blitzRadiusMiles are configured
-  if (config.myPosition && config.blitzRadiusMiles) {
-    const lat = config.myPosition.lat;
-    const lon = config.myPosition.lon;
-    const radiusMiles = config.blitzRadiusMiles;
-    const latDegreeOffset = radiusMiles / 69;
-    const lonDegreeOffset = radiusMiles / (69 * Math.cos(lat * Math.PI / 180));
-    
-    config.blitzArea = {
-      minLat: lat - latDegreeOffset,
-      maxLat: lat + latDegreeOffset,
-      minLon: lon - lonDegreeOffset,
-      maxLon: lon + lonDegreeOffset
-    };
-    console.log(`Calculated lightning bounding box (${radiusMiles} miles range around ${lat.toFixed(4)}, ${lon.toFixed(4)}):`, config.blitzArea);
-  }
-
-  // Resolve NWS metadata and timezone
-  let timeZone = 'UTC';
-  if (config.myPosition) {
-    try {
-      const pointsUrl = `https://api.weather.gov/points/${config.myPosition.lat},${config.myPosition.lon}`;
-      console.log(`Resolving NWS metadata and timezone for position...`);
-      const pointsData = await fetchNWS(pointsUrl);
-      cachedForecastUrl = pointsData.properties.forecast;
-      timeZone = pointsData.properties.timeZone || 'UTC';
-      console.log(`Resolved local timezone: ${timeZone}`);
-    } catch (err) {
-      console.error('Failed to resolve NWS metadata or timezone at startup:', err.message);
-    }
-  }
-
-  for (const [channelType, channelName] of Object.entries(config.channels)) {
-    channels[channelType] = await connection.findChannelByName(channelName);
-    if (!channels[channelType]) {
-      console.log(`Channel ${channelType}: "${channelName}" not found!`);
-      connection.close();
-      return;
-    }
-  }
-
-  // Register Blitzortung lightning listener
-  await registerBlitzortungMqtt(blitzHandler, config.blitzArea);
-
-  // Daily weather forecast alarm
-  utils.setAlarm(config.weatherAlarm, sendWeather, timeZone);
-
-  // Lightning check interval
-  setInterval(blitzWarning, config.timers.blitzCollection);
-
-  // NWS Active Alerts check interval
-  if (config.meteoAlerts.enabled) {
-    setInterval(checkMeteoAlerts, config.timers.meteoAlerts);
-    checkMeteoAlerts();
-  }
-
-  console.log('weatherBot ready.');
+  // Load modules dynamically
+  await loadModules();
 });
 
-// Listen for new incoming messages on the MeshCore node
 connection.on(Constants.PushCodes.MsgWaiting, async () => {
   try {
     const waitingMessages = await connection.getWaitingMessages();
     for (const message of waitingMessages) {
-      if (message.contactMessage) {
-        await onContactMessageReceived(message.contactMessage);
-      } else if (message.channelMessage) {
-        await onChannelMessageReceived(message.channelMessage);
+      if (message.channelIdx === 0xFF) {
+        // Direct Message (DM)
+        const contact = await connection.findContactByPublicKeyPrefix(message.pubKeyPrefix);
+        if (!contact) {
+          console.log("Did not find contact for received message");
+          continue;
+        }
+        await dispatchMessage(message.text, async (replyText) => {
+          await host.sendDM(contact.publicKey, replyText);
+          console.log(`Sent contact reply: ${replyText}`);
+        }, contact, { channelIdx: message.channelIdx });
+      } else {
+        // Channel Message
+        await dispatchMessage(message.text, async (replyText) => {
+          try {
+            await host.sendChannelMessage(message.channelIdx, replyText);
+            console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
+          } catch (err) {
+            console.error(`Failed to send channel reply to index ${message.channelIdx}:`, err);
+          }
+        }, null, { channelIdx: message.channelIdx });
       }
     }
   } catch (e) {
@@ -206,595 +142,35 @@ connection.on(Constants.PushCodes.MsgWaiting, async () => {
   }
 });
 
-// Helper for fetching NWS API endpoints
-async function fetchNWS(url) {
-  const userAgent = config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': userAgent,
-      'Accept': 'application/geo+json'
-    }
-  });
-
-  if (!res.ok) {
-    throw new Error(`NWS API error ${res.status}: ${res.statusText}`);
-  }
-
-  return res.json();
-}
-
-// Dual-redundant US ZIP Code geocoder (Zippopotam -> OSM Nominatim)
-async function resolveZip(zip) {
-  // Try zippopotam.us first (unauthenticated, fast, no cloud IP block)
-  try {
-    const url = `https://api.zippopotam.us/us/${zip}`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.places && data.places.length > 0) {
-        const place = data.places[0];
-        const lat = parseFloat(place.latitude);
-        const lon = parseFloat(place.longitude);
-        const displayName = `${place['place name']}, ${place['state abbreviation']}`;
-        return { lat, lon, displayName };
-      }
-    }
-  } catch (err) {
-    console.warn(`Zippopotam lookup failed for ZIP ${zip}, trying Nominatim...`, err.message);
-  }
-
-  // Fallback to OSM Nominatim
-  const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`
-    }
-  });
-  if (!res.ok) throw new Error(`OSM HTTP error ${res.status}`);
-  const data = await res.json();
-  if (data && data.length > 0) {
-    const lat = parseFloat(data[0].lat);
-    const lon = parseFloat(data[0].lon);
-    const nameParts = data[0].display_name.split(',');
-    const city = nameParts[0] || '';
-    const state = nameParts[2] ? nameParts[2].trim() : (nameParts[1] ? nameParts[1].trim() : '');
-    const displayName = `${city}, ${state}`.replace(/,\s*$/, '');
-    return { lat, lon, displayName };
-  }
-
-  throw new Error(`Could not resolve ZIP code ${zip}`);
-}
-
-async function checkMeteoAlerts() {
-  const timeoutMs = config.meteoAlerts.timeout * 60 * 1000;
-  Object.keys(meteoAlerts).forEach(key => {
-    const entry = meteoAlerts[key];
-    const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
-    if (timestamp < Date.now() - timeoutMs) {
-      delete meteoAlerts[key];
-    }
-  });
-
-  try {
-    const url = `https://api.weather.gov/alerts/active?point=${config.myPosition.lat},${config.myPosition.lon}`;
-    const data = await fetchNWS(url);
-
-    if (!data.features) {
-      return;
-    }
-
-    const activeIds = new Set();
-    const warnings = [];
-    for (const feature of data.features) {
-      const props = feature.properties;
-      if (!props) continue;
-
-      const id = props.identifier || feature.id;
-      if (id) activeIds.add(id);
-
-      const endTime = props.expires ? new Date(props.expires) : (props.ends ? new Date(props.ends) : null);
-      if (endTime && endTime < Date.now()) {
-        continue;
-      }
-
-      const severity = (props.severity || 'unknown').toLowerCase();
-      const certainty = (props.certainty || 'unknown').toLowerCase();
-
-      if (!config.meteoAlerts.severityFilter.includes(severity) ||
-          !config.meteoAlerts.certaintyFilter.includes(certainty)) {
-        continue;
-      }
-
-      if (meteoAlerts[id]) {
-        continue;
-      }
-
-      warnings.push({
-        id,
-        region: props.areaDesc || 'Unknown Area',
-        event: props.event,
-        start: props.onset,
-        end: props.expires || props.ends,
-        severity,
-        certainty,
-        headline: props.headline || '',
-        instruction: props.instruction || ''
-      });
-    }
-
-    if (warnings.length > 0) {
-      const sorted = warnings.sort((a, b) => new Date(a.start) - new Date(b.start));
-      for (const item of sorted) {
-        const message = interpolate(config.meteoAlerts.messageTemplate, {
-          region: item.region,
-          start: utils.formatDate(item.start),
-          end: utils.formatDate(item.end),
-          event: item.event,
-          severity: config.meteoAlerts.severity[item.severity] || item.severity,
-          certainty: config.meteoAlerts.certainty[item.certainty] || item.certainty,
-          headline: item.headline,
-          instruction: item.instruction
-        });
-
-        await sendAlert(message, channels.alerts);
-        meteoAlerts[item.id] = {
-          timestamp: Date.now(),
-          event: item.event,
-          region: item.region,
-          cleared: false
-        };
-        await utils.sleep(30 * 1000);
-      }
-    }
-
-    // Detect and send cleared warnings
-    for (const id of Object.keys(meteoAlerts)) {
-      const cached = meteoAlerts[id];
-      if (activeIds.has(id)) continue;
-
-      const isAlreadyCleared = typeof cached === 'object' ? cached.cleared : false;
-      if (isAlreadyCleared) continue;
-
-      const event = typeof cached === 'object' ? cached.event : 'Weather Alert';
-      const region = typeof cached === 'object' ? cached.region : 'Area';
-
-      const clearMessage = `🟢 CLEAR: ${event} has ended/been cleared for ${region}.`;
-      await sendAlert(clearMessage, channels.alerts);
-
-      if (typeof cached === 'object') {
-        cached.cleared = true;
-        cached.timestamp = Date.now(); // reset timestamp so it stays in cache for the timeout period
-      } else {
-        meteoAlerts[id] = {
-          timestamp: Date.now(),
-          event,
-          region,
-          cleared: true
-        };
-      }
-      await utils.sleep(30 * 1000);
-    }
-  } catch (err) {
-    console.error('Failed to check meteo alerts:', err);
-  }
-}
-
-function interpolate(str, data) {
-  return str.replace(/\{([^}]+)\}/g, (_, key) => {
-    return data[key] ?? "";
-  });
-}
-
-// Maps weather descriptors to emojis for short, high-density LoRa transmission
-function getEmojiForForecast(forecastText) {
-  const text = (forecastText || '').toLowerCase();
-  if (text.includes('thunder') || text.includes('storm')) return '⛈️';
-  if (text.includes('snow') || text.includes('ice') || text.includes('sleet') || text.includes('freeze') || text.includes('flurry')) return '❄️';
-  if (text.includes('rain') || text.includes('shower') || text.includes('drizzle')) return '🌧️';
-  if (text.includes('fog') || text.includes('mist') || text.includes('haze')) return '🌫️';
-  if (text.includes('wind') || text.includes('breezy') || text.includes('windy')) return '💨';
-  if (text.includes('mostly sunny') || text.includes('partly sunny') || text.includes('mostly clear') || text.includes('partly cloudy')) return '🌤';
-  if (text.includes('sunny') || text.includes('clear')) return '☀️';
-  if (text.includes('cloud') || text.includes('overcast') || text.includes('gloomy')) return '☁️';
-  return '⛅'; // Default fallback
-}
-
-// Formats NWS forecast periods to a compressed string with emojis (today + next 2 days)
-function formatCompressedForecast(zip, periods) {
-  const groups = new Map();
-  for (const p of periods) {
-    const dateStr = p.startTime.slice(0, 10); // "YYYY-MM-DD"
-    if (!groups.has(dateStr)) {
-      groups.set(dateStr, {
-        dateStr,
-        daytime: null,
-        nighttime: null
-      });
-    }
-    const group = groups.get(dateStr);
-    if (p.isDaytime) {
-      group.daytime = p;
-    } else {
-      group.nighttime = p;
-    }
-  }
-
-  // Get the first 3 groups
-  const sortedGroups = Array.from(groups.values()).slice(0, 3);
-  
-  const header = `Wx ${zip ? zip : ''}:\n`;
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"];
-
-  const lines = sortedGroups.map((group, index) => {
-    let label = '';
-    if (index === 0) {
-      label = 'today';
-    } else {
-      const dateObj = new Date(group.dateStr + "T00:00:00Z");
-      const dayIndex = dateObj.getUTCDay();
-      label = weekdays[dayIndex];
-    }
-
-    const forecastText = (group.daytime || group.nighttime)?.shortForecast || '';
-    const emoji = getEmojiForForecast(forecastText);
-
-    const parts = [];
-    if (group.daytime) {
-      parts.push(`hi: ${group.daytime.temperature}`);
-    }
-    if (group.nighttime) {
-      parts.push(`low: ${group.nighttime.temperature}`);
-    }
-
-    return `${label}: ${emoji} ${parts.join(' ')}`;
-  });
-
-  return header + lines.join('\n');
-}
-
-async function handleIncomingMessage(text, replyCallback, contact = null) {
-  if (!text) return;
-  let cleanText = text.trim();
-  
-  // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
-  cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
-  
-  const lowerText = cleanText.toLowerCase();
-
-  // Handle Version/Info Commands
-  if (lowerText === 'version' || lowerText === 'info') {
-    await replyCallback(`US WeatherBot v${VERSION}`);
+async function loadModules() {
+  if (!config.enabledModules || !Array.isArray(config.enabledModules)) {
+    console.log("No modules configured in enabledModules.");
     return;
   }
 
-  // 1. Handle Subscription Commands
-  if (lowerText.startsWith('subscribe')) {
-    if (!contact) {
-      await replyCallback('Error: Subscriptions must be requested via direct message.');
-      return;
-    }
-    const match = cleanText.match(/^subscribe\s+(\d{5})$/i);
-    if (!match) {
-      await replyCallback('Usage: subscribe [5-digit zip code]');
-      return;
-    }
-    const zip = match[1];
+  for (const modName of config.enabledModules) {
     try {
-      const result = await resolveZip(zip);
+      console.log(`Loading module: ${modName}...`);
+      const modPath = `./modules/${modName}.mjs`;
+      const moduleClass = (await import(modPath)).default;
+      const modInstance = new moduleClass();
       
-      // Resolve NWS points metadata to retrieve the grid forecast endpoint
-      const pointsUrl = `https://api.weather.gov/points/${result.lat},${result.lon}`;
-      const pointsRes = await fetch(pointsUrl, {
-        headers: {
-          'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
-          'Accept': 'application/geo+json'
-        }
-      });
-      if (!pointsRes.ok) throw new Error(`NWS points error ${pointsRes.status}`);
-      const pointsData = await pointsRes.json();
-      const forecastUrl = pointsData.properties.forecast;
-
-      await addSubscription(contact.publicKey, zip, result.displayName, result.lat, result.lon, forecastUrl);
-      await replyCallback(`Subscribed! You will receive daily forecasts for ${result.displayName} (${zip}) every day at ${config.weatherAlarm} local time.`);
+      const modConfig = config.modules?.[modName] || {};
+      
+      if (typeof modInstance.init === 'function') {
+        await modInstance.init(host, modConfig);
+      }
+      
+      modInstance.name = modName;
+      activeModules.push(modInstance);
+      console.log(`Module [${modName}] loaded successfully.`);
     } catch (err) {
-      console.error(`Subscription failed for ZIP ${zip}:`, err.message);
-      await replyCallback(`Error: Could not resolve ZIP code ${zip}. Subscription failed.`);
-    }
-    return;
-  }
-
-  if (lowerText === 'unsubscribe') {
-    if (!contact) {
-      await replyCallback('Error: Subscriptions must be managed via direct message.');
-      return;
-    }
-    const removed = await removeSubscription(contact.publicKey);
-    if (removed) {
-      await replyCallback('Unsubscribed. You will no longer receive daily forecasts.');
-    } else {
-      await replyCallback('You do not have an active subscription.');
-    }
-    return;
-  }
-
-  // 2. Handle standard weather/wx zip code queries
-  let zip = null;
-  
-  // Pattern 1: just a 5-digit number
-  if (/^\d{5}$/.test(cleanText)) {
-    zip = cleanText;
-  } else {
-    // Pattern 2: matches weather/wx commands (e.g. !weather 90210, /wx 10001, weather 30303)
-    const match = cleanText.match(/^[!/#]?(weather|wx)\s+(\d{5})$/i);
-    if (match) {
-      zip = match[2];
-    }
-  }
-
-  if (!zip) return; // Not a weather request
-
-  console.log(`Processing interactive weather request for ZIP: ${zip}`);
-  try {
-    // 1. Geocode ZIP code to coordinates using dual-redundant resolver
-    const result = await resolveZip(zip);
-    const lat = result.lat;
-    const lon = result.lon;
-    const displayName = result.displayName;
-
-    // 2. Fetch NWS Points Metadata to resolve grid forecast endpoint
-    const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
-    const pointsRes = await fetch(pointsUrl, {
-      headers: {
-        'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
-        'Accept': 'application/geo+json'
-      }
-    });
-    if (!pointsRes.ok) throw new Error(`NWS points HTTP error ${pointsRes.status}`);
-    const pointsData = await pointsRes.json();
-    const forecastUrl = pointsData.properties.forecast;
-
-    // 3. Fetch Forecast Details
-    const forecastRes = await fetch(forecastUrl, {
-      headers: {
-        'User-Agent': config.userAgent || `MeshCoreWeatherBot/${VERSION} (contact@example.com)`,
-        'Accept': 'application/geo+json'
-      }
-    });
-    if (!forecastRes.ok) throw new Error(`NWS forecast HTTP error ${forecastRes.status}`);
-    const forecastData = await forecastRes.json();
-    const periods = forecastData.properties.periods;
-
-    if (!periods || periods.length === 0) {
-      await replyCallback(`Error: No forecast data found for ZIP ${zip}`);
-      return;
-    }
-
-    // 4. Format 3-day compressed forecast
-    const forecastText = formatCompressedForecast(zip, periods);
-
-    // 5. Send back in chunks
-    const chunks = utils.splitStringToByteChunks(forecastText, 130);
-    for (const chunk of chunks) {
-      await replyCallback(chunk);
-      await utils.sleep(5000);
-    }
-  } catch (err) {
-    console.error(`Failed to handle weather request for ${zip}:`, err);
-    await replyCallback(`Error fetching weather for ZIP ${zip}. Please try again later.`);
-  }
-}
-
-async function onContactMessageReceived(message) {
-  console.log('Received contact message:', message);
-  if (!message.text) return;
-
-  const contact = await connection.findContactByPublicKeyPrefix(message.pubKeyPrefix);
-  if (!contact) {
-    console.log("Did not find contact for received message");
-    return;
-  }
-
-  await handleIncomingMessage(message.text, async (replyText) => {
-    await connection.sendTextMessage(contact.publicKey, replyText, Constants.TxtTypes.Plain);
-    console.log(`Sent contact reply: ${replyText}`);
-  }, contact);
-}
-
-async function onChannelMessageReceived(message) {
-  console.log('Received channel message:', message);
-  if (!message.text) return;
-
-  const weatherIdx = channels.weather?.channelIdx;
-  console.log(`Channel message details: message.channelIdx=${message.channelIdx} (type: ${typeof message.channelIdx}), channels.weather.channelIdx=${weatherIdx} (type: ${typeof weatherIdx})`);
-
-  // Only reply to messages on the #weather channel
-  if (message.channelIdx !== weatherIdx) {
-    console.log(`Ignored channel message on channel index ${message.channelIdx} (not #weather channel index ${weatherIdx})`);
-    return;
-  }
-
-  await handleIncomingMessage(message.text, async (replyText) => {
-    try {
-      await connection.sendChannelTextMessage(message.channelIdx, replyText);
-      console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
-    } catch (err) {
-      console.error(`Failed to send channel reply to index ${message.channelIdx}:`, err);
-    }
-  });
-}
-
-async function sendSubscriberForecast(publicKey, sub) {
-  try {
-    console.log(`Sending daily forecast to subscriber ${sub.displayName} (${sub.zipCode})...`);
-    
-    let forecastUrl = sub.forecastUrl;
-    if (!forecastUrl) {
-      // Fallback in case old subscription format doesn't have forecastUrl
-      const pointsUrl = `https://api.weather.gov/points/${sub.lat},${sub.lon}`;
-      const pointsData = await fetchNWS(pointsUrl);
-      forecastUrl = pointsData.properties.forecast;
-    }
-
-    const forecastData = await fetchNWS(forecastUrl);
-    const periods = forecastData.properties.periods;
-    if (!periods || periods.length === 0) {
-      console.warn(`No forecast periods available for subscriber ${sub.zipCode}`);
-      return;
-    }
-
-    // 2. Format message 1: Synopsis of today's weather
-    const firstPeriod = periods[0];
-    const synopsis = `${firstPeriod.name}: ${firstPeriod.detailedForecast}`;
-    const synopsisMsg = utils.shortenToBytes(synopsis, 145);
-
-    // 3. Format message 2: 3-day forecast
-    const forecastText = formatCompressedForecast(sub.zipCode, periods);
-
-    // 4. Send both messages to the subscriber via direct message (DM)
-    await connection.sendTextMessage(publicKey, synopsisMsg, Constants.TxtTypes.Plain);
-    await utils.sleep(5000); // 5-second pause between messages to prevent collision
-    await connection.sendTextMessage(publicKey, forecastText, Constants.TxtTypes.Plain);
-    
-    console.log(`Successfully sent subscriber forecast to ${sub.displayName}`);
-  } catch (err) {
-    console.error(`Failed to send subscriber forecast to ${sub.zipCode}:`, err.message);
-  }
-}
-
-async function sendWeather(date) {
-  console.log('Starting scheduled daily weather broadcast...');
-  // 1. Send channel forecast
-  try {
-    const weatherText = await getWeather();
-    const chunks = utils.splitStringToByteChunks(weatherText, 130);
-    if (chunks.length > 0) {
-      for (const message of chunks) {
-        await sendAlert(message, channels.weather);
-      }
-    }
-  } catch (err) {
-    console.error('Failed to send main weather broadcast:', err.message);
-  }
-
-  // 2. Send subscriber forecasts
-  const subs = readSubscriptions();
-  const subKeys = Object.keys(subs);
-  if (subKeys.length > 0) {
-    console.log(`Processing ${subKeys.length} subscriber weather forecasts...`);
-    for (const key of subKeys) {
-      const sub = subs[key];
-      const subPublicKey = Buffer.from(sub.publicKeyHex, 'hex');
-      await sendSubscriberForecast(subPublicKey, sub);
-      await utils.sleep(10000); // 10 second pause between subscribers to prevent TX flood
+      console.error(`Failed to load module [${modName}]:`, err);
     }
   }
 }
 
-let cachedForecastUrl = null;
-
-async function getWeather() {
-  try {
-    if (!cachedForecastUrl) {
-      const url = `https://api.weather.gov/points/${config.myPosition.lat},${config.myPosition.lon}`;
-      console.log(`Retrieving grid forecast URL for ${config.myPosition.lat}, ${config.myPosition.lon}`);
-      const pointsData = await fetchNWS(url);
-      cachedForecastUrl = pointsData.properties.forecast;
-    }
-
-    const forecastData = await fetchNWS(cachedForecastUrl);
-    const periods = forecastData.properties.periods;
-    if (!periods || periods.length === 0) {
-      return 'No forecast periods available.';
-    }
-
-    // Format 3-day compressed forecast
-    return formatCompressedForecast(config.zipCode, periods);
-  } catch (err) {
-    console.error('Failed to get NWS forecast:', err);
-    return `Weather Forecast Unavailable: ${err.message}`;
-  }
+// Connect to the MeshCore serial connection if run directly
+if (process.argv[1] && (process.argv[1].endsWith('index.mjs') || process.argv[1].endsWith('index.js'))) {
+  await connection.connect();
 }
-
-async function registerBlitzortungMqtt(blitzCallback, blitzArea) {
-  console.log(`Connecting to Blitzortung MQTT broker...`);
-  const client = await mqtt.connectAsync('mqtt://blitzortung.ha.sed.pl:1883');
-  const decoder = new TextDecoder();
-
-  client.on('message', (_, data) => {
-    try {
-      const json = decoder.decode(data);
-      const rawData = JSON.parse(json);
-      const lat = parseFloat(rawData.lat);
-      const lon = parseFloat(rawData.lon);
-
-      if (isNaN(lat) || isNaN(lon)) {
-        return;
-      }
-
-      if (lat < blitzArea.minLat || lon < blitzArea.minLon ||
-        lat > blitzArea.maxLat || lon > blitzArea.maxLon) {
-        return;
-      }
-
-      blitzCallback({ ...rawData, lat, lon });
-    } catch (err) {
-      console.error('Error processing Blitzortung message:', err);
-    }
-  });
-
-  await client.subscribeAsync('blitzortung/1.1/#');
-  console.log('Subscribed to Blitzortung lightning notifications.');
-}
-
-function blitzHandler(blitzData) {
-  const blitz = utils.calculateHeadingAndDistance(config.myPosition.lat, config.myPosition.lon, blitzData.lat, blitzData.lon);
-  blitzBuffer.push({
-    key: `${blitz.heading}|${(blitz.distance / 10) | 0}`,
-    heading: blitz.heading,
-    distance: blitz.distance,
-    lat: blitzData.lat,
-    lon: blitzData.lon
-  });
-}
-
-async function sendAlert(message, channel) {
-  await connection.sendChannelTextMessage(
-    channel.channelIdx,
-    utils.shortenToBytes(message, 155)
-  );
-  console.log(`Sent out [${channel.name}]: ${message}`);
-  await utils.sleep(30 * 1000);
-}
-
-async function geoCodeCached(key, lat, lon) {
-  if (geoCache[key]) return geoCache[key];
-  const location = await utils.geoCode(lat, lon);
-  if (location) geoCache[key] = location;
-  return location;
-}
-
-async function blitzWarning() {
-  const counter = {};
-
-  for (const blitz of blitzBuffer) {
-    counter[blitz.key] = (counter[blitz.key] || 0) + 1;
-  }
-
-  for (const key of Object.keys(counter)) {
-    if (counter[key] < 10 || seen.blitz[key]) continue;
-    const [heading, distance] = key.split('|');
-    if (!(heading && distance)) continue;
-
-    const data = blitzBuffer.find(b => b.key === key);
-    if (!data) continue;
-
-    const location = await geoCodeCached(key, data.lat, data.lon) || `${data.lat.toFixed(3)}, ${data.lon.toFixed(3)}`;
-    await sendAlert(`🌩️ Lightning: ${location} (${parseInt(distance, 10) * 10}km ${config.compasNames[heading]})`, channels.alerts);
-    seen.blitz[key] = Date.now();
-  }
-
-  blitzBuffer = [];
-}
-
-// Connect to the MeshCore serial connection
-await connection.connect();
