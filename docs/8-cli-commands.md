@@ -24,19 +24,23 @@ npm run cli -- <command> [args]
 
 ## 2. Command Reference
 
-### `meshbot start [port]`
+### `meshbot start [port] [-S]`
 Starts the host bot runtime (`index.mjs`) as a child process.
 
 - **Arguments**:
   - `[port]` (Optional): Overrides the default serial connection port defined in `config.json` (e.g. `COM3` on Windows or `/dev/ttyACM0` on Linux).
+  - `-S` or `--select` (Optional): Opens an interactive, arrow-key selectable CLI device menu to scan for active serial ports and choose which to run the bot on.
 - **Behavior**:
   - Spawns the main execution loop in a clean process context to prevent argument contamination.
   - Automatically loads and initializes all enabled modules specified in `config.json`.
+  - Persists your interactive choice directly to `config.json` for subsequent runs.
 
 ```bash
 meshbot start
 # Or with a custom port:
 meshbot start COM5
+# Or scanning/selecting interactively:
+meshbot start -S
 ```
 
 ---

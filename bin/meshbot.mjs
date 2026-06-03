@@ -54,7 +54,7 @@ MeshBot Command-Line Interface (v1.1.0)
 Usage: meshbot <command> [args]
 
 Commands:
-  start [port]             Start the bot runtime (equivalent to node index.mjs)
+  start [port] [-S]        Start the bot runtime (use -S to scan/select device port)
   list                     List all enabled modules
   config                   Run the interactive wizard for core connection settings
   service <action>         Manage the systemd service (install, uninstall, status, restart)
@@ -62,6 +62,122 @@ Commands:
   weather                  Run configuration wizard for the Weather module
   help                     Show this help message
 `);
+}
+
+// Interactive selection menu
+function selectOption(title, options) {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve(0);
+      return;
+    }
+    let selectedIndex = 0;
+    
+    function render() {
+      // Clear console screen cleanly and move cursor to top-left
+      process.stdout.write('\x1bc'); 
+      console.log("\x1b[36m==================================================\x1b[0m");
+      console.log(`\x1b[1m\x1b[35m  ${title}\x1b[0m`);
+      console.log("\x1b[36m==================================================\x1b[0m");
+      
+      options.forEach((opt, idx) => {
+        if (idx === selectedIndex) {
+          console.log(` \x1b[32m➔ [●] ${opt}\x1b[0m`);
+        } else {
+          console.log(`   [ ] ${opt}`);
+        }
+      });
+      console.log("\x1b[36m--------------------------------------------------\x1b[0m");
+      console.log("\x1b[90mUse Arrow Keys (↑/↓) to navigate, Enter to select.\x1b[0m");
+    }
+
+    render();
+
+    readline.emitKeypressEvents(process.stdin);
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    
+    const onKeypress = (str, key) => {
+      if (key) {
+        if (key.ctrl && key.name === 'c') {
+          cleanup();
+          process.exit(0);
+        }
+        if (key.name === 'up') {
+          selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+          render();
+        } else if (key.name === 'down') {
+          selectedIndex = (selectedIndex + 1) % options.length;
+          render();
+        } else if (key.name === 'return' || key.name === 'enter') {
+          cleanup();
+          process.stdout.write('\x1bc'); 
+          resolve(selectedIndex);
+        }
+      }
+    };
+
+    function cleanup() {
+      process.stdin.removeListener('keypress', onKeypress);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+    }
+
+    process.stdin.on('keypress', onKeypress);
+  });
+}
+
+// Port selection helper
+async function runPortSelection() {
+  let ports = [];
+  try {
+    const { SerialPort } = await import('serialport');
+    ports = await SerialPort.list();
+  } catch (err) {
+    console.warn("Could not list serial ports:", err.message);
+  }
+
+  if (ports.length === 0) {
+    console.log("\x1b[33mNo active serial ports were auto-detected.\x1b[0m");
+    if (!process.stdin.isTTY) {
+      console.log("Non-interactive environment detected. Using default port COM11.");
+      return "COM11";
+    }
+    const manualPort = await askQuestion("Enter device serial port path manually (e.g. COM3 or /dev/ttyACM0): ");
+    if (!manualPort) {
+      console.error("No port entered. Exiting.");
+      process.exit(1);
+    }
+    const cfg = loadConfig();
+    cfg.port = manualPort;
+    saveConfig(cfg);
+    return manualPort;
+  }
+
+  const options = ports.map(p => `${p.path} - ${p.friendlyName || p.manufacturer || 'Generic Device'}`);
+  options.push("[ Enter custom port name manually ]");
+
+  const selectedIdx = await selectOption("Select MeshCore Serial Device", options);
+
+  if (selectedIdx === options.length - 1) {
+    const manualPort = await askQuestion("Enter custom serial port path: ");
+    if (!manualPort) {
+      console.error("No port entered. Exiting.");
+      process.exit(1);
+    }
+    const cfg = loadConfig();
+    cfg.port = manualPort;
+    saveConfig(cfg);
+    return manualPort;
+  } else {
+    const chosenPort = ports[selectedIdx].path;
+    const cfg = loadConfig();
+    cfg.port = chosenPort;
+    saveConfig(cfg);
+    return chosenPort;
+  }
 }
 
 // Main execution
@@ -77,9 +193,20 @@ async function main() {
       break;
 
     case 'start':
-      const portArg = args[1];
+      const hasSelectFlag = args.includes('-S') || args.includes('--select');
+      let selectedPort = null;
+
+      if (hasSelectFlag) {
+        selectedPort = await runPortSelection();
+      } else {
+        const nonFlagArgs = args.slice(1).filter(a => a !== '-S' && a !== '--select');
+        if (nonFlagArgs.length > 0) {
+          selectedPort = nonFlagArgs[0];
+        }
+      }
+      
       const indexMjs = join(rootDir, 'index.mjs');
-      const startArgs = portArg ? [indexMjs, portArg] : [indexMjs];
+      const startArgs = selectedPort ? [indexMjs, selectedPort] : [indexMjs];
       
       console.log(`Starting MeshBot subprocess...`);
       const child = spawn('node', startArgs, {

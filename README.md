@@ -88,7 +88,7 @@ The bot includes a unified command-line tool `meshbot` to manage the lifecycle, 
 
 ### Commands
 
-*   `meshbot start [port]`: Starts the bot host runtime (and connects to the serial device).
+*   `meshbot start [port] [-S]`: Starts the bot host runtime (use `-S` to scan and select device port interactively).
 *   `meshbot list`: Lists all currently enabled/active modules.
 *   `meshbot config`: Runs the interactive configuration wizard for core connection settings (serial port and enabled modules).
 *   `meshbot weather`: Runs the interactive configuration wizard for the Weather module (ZIP code, alert toggles, alarm time, and NWS User-Agent email).
