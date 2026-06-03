@@ -60,6 +60,7 @@ Commands:
   service <action>         Manage the systemd service (install, uninstall, status, restart)
   update                   Pull updates from GitHub and install dependencies
   weather                  Run configuration wizard for the Weather module
+  mqtt                     Run configuration wizard for the MQTT module
   help                     Show this help message
 `);
 }
@@ -304,6 +305,33 @@ async function main() {
         saveConfig(wCfg);
       } catch (err) {
         console.error("Failed to run weather module wizard:", err.message);
+        process.exit(1);
+      }
+      break;
+
+    case 'mqtt':
+      const mCfg = loadConfig();
+      try {
+        const mqttMjs = join(rootDir, 'modules', 'mqtt.mjs');
+        const mqttClass = (await import(`file://${mqttMjs}`)).default;
+        
+        if (typeof mqttClass.configure !== 'function') {
+          console.error("Error: MQTT module does not support interactive CLI configuration.");
+          process.exit(1);
+        }
+
+        console.log("--------------------------------------------------");
+        console.log("          MQTT Module Configuration               ");
+        console.log("--------------------------------------------------");
+
+        if (!mCfg.modules) mCfg.modules = {};
+        if (!mCfg.modules.mqtt) mCfg.modules.mqtt = {};
+
+        const updatedMqttCfg = await mqttClass.configure(askQuestion, mCfg.modules.mqtt);
+        mCfg.modules.mqtt = updatedMqttCfg;
+        saveConfig(mCfg);
+      } catch (err) {
+        console.error("Failed to run MQTT module wizard:", err.message);
         process.exit(1);
       }
       break;

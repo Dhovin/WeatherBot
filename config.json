@@ -8,7 +8,8 @@
   },
   "enabledModules": [
     "weather",
-    "testing"
+    "testing",
+    "mqtt"
   ],
   "modules": {
     "weather": {
@@ -68,6 +69,13 @@
         }
       }
     },
-    "testing": {}
+    "testing": {},
+    "mqtt": {
+      "iataCode": "ORD",
+      "enabledPresets": [
+        "ntxmesh"
+      ],
+      "customBrokers": []
+    }
   }
 }
