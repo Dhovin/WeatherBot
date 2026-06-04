@@ -9,6 +9,8 @@ A Node.js weather alert and lightning tracking bot for MeshCore networks, specif
 -   **Active Weather Alerts & Clearance**: Polls NWS active alerts for your exact GPS coordinates, broadcasts matching warnings (e.g., Tornado, Severe Thunderstorm, Flood Warnings), and automatically posts a **Clearance Notification** (e.g., `🟢 CLEAR: Tornado Warning has ended/been cleared...`) when warnings expire or get canceled.
 -   **Lightning Proximity Alerts**: Monitors global lightning strikes in real-time using the Blitzortung MQTT network, reporting active cells in your area with heading and distance (e.g., `Lightning: Arlington, VA (10km East)`).
 -   **Interactive Queries**: Users can send a message directly to the bot or on a monitored channel containing a US ZIP code (e.g., `90210`, `!weather 90210`, or `/wx 30303`) to query the local forecast, or send `version`/`info` to get the bot's current software version.
+-   **One-Way MQTT Telemetry Forwarder**: Automatically listens to raw RX/TX serial frames and forwards them in real-time to public and private mapping databases (supporting 20 presets including LetsMesh, MeshMapper, and `ntxmesh`) using TCP (`mqtt://`), TLS (`mqtts://`), or WebSockets (`ws://`/`wss://`) with automatic protocol detection probing.
+-   **Network Topology Crawler**: Periodically polls the local contacts database and crawls remote repeaters (`getNeighbours`) with retry logic to build a network-wide database (`topology.json`) and exports a fully interactive, CORS-safe, Leaflet-based map (`mesh_map.html`) showing repeaters and interconnect links colored by SNR signal quality.
 
 ## Requirements
 
@@ -92,6 +94,8 @@ The bot includes a unified command-line tool `meshbot` to manage the lifecycle, 
 *   `meshbot list`: Lists all currently enabled/active modules.
 *   `meshbot config`: Runs the interactive configuration wizard for core connection settings (serial port and enabled modules).
 *   `meshbot weather`: Runs the interactive configuration wizard for the Weather module (ZIP code, alert toggles, alarm time, and NWS User-Agent email).
+*   `meshbot mqtt`: Runs the interactive configuration wizard for the MQTT module (IATA code, preset brokers, custom brokers url/token/audience).
+*   `meshbot mapper`: Runs the interactive configuration wizard for the Network Mapper module (crawl interval, query retries, Leaflet HTML map file path).
 *   `meshbot service <action>`: Manages the Linux systemd background service:
     *   `meshbot service install`: Installs and registers the systemd daemon.
     *   `meshbot service uninstall`: Removes the systemd daemon.

@@ -9,7 +9,8 @@
   "enabledModules": [
     "weather",
     "testing",
-    "mqtt"
+    "mqtt",
+    "mapper"
   ],
   "modules": {
     "weather": {
@@ -76,6 +77,11 @@
         "ntxmesh"
       ],
       "customBrokers": []
+    },
+    "mapper": {
+      "intervalHours": 2,
+      "maxAttempts": 3,
+      "mapHtmlPath": "mesh_map.html"
     }
   }
 }
