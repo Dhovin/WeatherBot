@@ -1,2 +1,14 @@
 node_modules/
 subscriptions.json
+
+# Ignore temporary/reference scratch files
+scratch/original_index.mjs
+scratch/auth_token.py
+scratch/packet_capture.py
+scratch/install.sh
+scratch/test_dhovin_rptr.mjs
+scratch/test_export.mjs
+scratch/test_noble.mjs
+scratch/test_sign_extended.mjs
+run_subscriber_test.mjs
+MQTT.md
