@@ -80,7 +80,7 @@
     },
     "mapper": {
       "intervalHours": 2,
-      "maxAttempts": 3,
+      "maxCycles": 5,
       "mapHtmlPath": "mesh_map.html"
     }
   }

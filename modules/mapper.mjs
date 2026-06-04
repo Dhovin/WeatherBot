@@ -12,9 +12,9 @@ export default class MapperModule {
     const interval = await askQuestion(`Enter network mapping crawl interval in hours [${defaultInterval}]: `);
     config.intervalHours = parseFloat(interval) || defaultInterval;
 
-    const defaultRetries = config.maxAttempts || 3;
-    const retries = await askQuestion(`Enter maximum neighbor query attempts per node [${defaultRetries}]: `);
-    config.maxAttempts = parseInt(retries, 10) || defaultRetries;
+    const defaultCycles = config.maxCycles || 5;
+    const cycles = await askQuestion(`Enter maximum crawl attempt cycles [${defaultCycles}]: `);
+    config.maxCycles = parseInt(cycles, 10) || defaultCycles;
 
     const defaultHtml = config.mapHtmlPath || "mesh_map.html";
     const htmlPath = await askQuestion(`Enter output Leaflet HTML map file path [${defaultHtml}]: `);
@@ -118,48 +118,68 @@ export default class MapperModule {
         });
       }
 
-      // 3. For each repeater (and local node), fetch neighbor list
-      const maxAttempts = this.config.maxAttempts || 3;
-
+      // 3. For each repeater, fetch neighbor list in spread-out cycles
+      const maxCycles = this.config.maxCycles || 5;
+      const successNeighbours = {}; // publicKeyHex -> neighbours array
+      
+      const repeaters = [];
       for (const [pubHex, node] of nodesMap.entries()) {
         if (node.type === "repeater") {
-          console.log(`[Mapper] Querying neighbor table for ${node.name} (${pubHex.slice(0, 8)})...`);
-          let success = false;
-          let attempt = 0;
-          let res = null;
+          repeaters.push({ pubHex, node });
+        }
+      }
 
-          const pKeyBytes = Buffer.from(pubHex, 'hex');
+      for (let cycle = 1; cycle <= maxCycles; cycle++) {
+        const remaining = repeaters.filter(r => !successNeighbours[r.pubHex]);
+        if (remaining.length === 0) break;
 
-          while (!success && attempt < maxAttempts) {
-            attempt++;
-            try {
-              res = await this.host.connection.getNeighbours(pKeyBytes);
-              success = true;
-            } catch (err) {
-              console.warn(`[Mapper] Attempt ${attempt}/${maxAttempts} failed for ${node.name}: ${err?.message || err || "unknown error"}`);
-              if (attempt < maxAttempts) {
-                await this.host.utils.sleep(3000); // Wait 3 seconds before retry
-              }
-            }
+        if (cycle > 1) {
+          console.log(`[Mapper] Waiting 90s before start of attempt cycle ${cycle}/${maxCycles}...`);
+          await this.host.utils.sleep(90000);
+        }
+
+        console.log(`[Mapper] Starting crawl cycle ${cycle}/${maxCycles} for ${remaining.length} repeaters...`);
+
+        for (let i = 0; i < remaining.length; i++) {
+          const { pubHex, node } = remaining[i];
+
+          if (i > 0) {
+            console.log(`[Mapper] Waiting 30s before querying ${node.name}...`);
+            await this.host.utils.sleep(30000);
           }
 
-          if (success && res && res.neighbours) {
-            console.log(`[Mapper] Successfully retrieved ${res.neighbours.length} neighbors for ${node.name}.`);
-            for (const neigh of res.neighbours) {
-              const neighPrefixHex = Buffer.from(neigh.publicKeyPrefix).toString('hex');
-              
-              links.push({
-                from: pubHex,
-                toPrefix: neighPrefixHex,
-                snr: neigh.snr,
-                heardSecondsAgo: neigh.heardSecondsAgo
-              });
+          console.log(`[Mapper] Querying neighbor table for ${node.name} (${pubHex.slice(0, 8)})...`);
+          try {
+            const pKeyBytes = Buffer.from(pubHex, 'hex');
+            const res = await this.host.connection.getNeighbours(pKeyBytes);
+            if (res && res.neighbours) {
+              console.log(`[Mapper] Successfully retrieved ${res.neighbours.length} neighbors for ${node.name}.`);
+              successNeighbours[pubHex] = res.neighbours;
+            } else {
+              console.warn(`[Mapper] Empty neighbor table returned for ${node.name}.`);
             }
-          } else {
-            console.warn(`[Mapper] Failed to retrieve neighbors for ${node.name} after ${maxAttempts} attempts.`);
+          } catch (err) {
+            console.warn(`[Mapper] Query failed for ${node.name}: ${err?.message || err || "unknown error"}`);
           }
         }
       }
+
+      // Compile links from successfully fetched neighbor lists
+      for (const [pubHex, neighbours] of Object.entries(successNeighbours)) {
+        for (const neigh of neighbours) {
+          const neighPrefixHex = Buffer.from(neigh.publicKeyPrefix).toString('hex');
+          links.push({
+            from: pubHex,
+            toPrefix: neighPrefixHex,
+            snr: neigh.snr,
+            heardSecondsAgo: neigh.heardSecondsAgo
+          });
+        }
+      }
+
+      // Log stats of crawl completion
+      const failedCount = repeaters.filter(r => !successNeighbours[r.pubHex]).length;
+      console.log(`[Mapper] Crawl finished. Discovered ${repeaters.length} repeaters, successfully queried ${Object.keys(successNeighbours).length}, failed ${failedCount}.`);
 
       // 4. Resolve 8-byte neighbor prefixes to 32-byte full public keys
       const resolvedLinks = [];

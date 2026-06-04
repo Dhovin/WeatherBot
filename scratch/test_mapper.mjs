@@ -94,7 +94,7 @@ async function startTest() {
 
     const config = {
       intervalHours: 0.001, // run fast
-      maxAttempts: 2,
+      maxCycles: 2,
       mapHtmlPath: "test_mesh_map.html"
     };
 
