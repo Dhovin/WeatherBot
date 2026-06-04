@@ -81,7 +81,7 @@ export default class MapperModule {
           nodesMap.set(pubHex, localNode);
         }
       } catch (err) {
-        console.warn("[Mapper] Failed to fetch local node info:", err.message);
+        console.warn("[Mapper] Failed to fetch local node info:", err?.message || err || "unknown error");
       }
 
       // 2. Fetch all contacts from node to discover repeaters
@@ -91,7 +91,7 @@ export default class MapperModule {
         contacts = await this.host.connection.getContacts();
         console.log(`[Mapper] Discovered ${contacts.length} contacts.`);
       } catch (err) {
-        console.warn("[Mapper] Failed to query contacts:", err.message);
+        console.warn("[Mapper] Failed to query contacts:", err?.message || err || "unknown error");
       }
 
       for (const contact of contacts) {
@@ -122,7 +122,7 @@ export default class MapperModule {
       const maxAttempts = this.config.maxAttempts || 3;
 
       for (const [pubHex, node] of nodesMap.entries()) {
-        if (node.type === "repeater" || node.type === "local") {
+        if (node.type === "repeater") {
           console.log(`[Mapper] Querying neighbor table for ${node.name} (${pubHex.slice(0, 8)})...`);
           let success = false;
           let attempt = 0;
@@ -136,7 +136,7 @@ export default class MapperModule {
               res = await this.host.connection.getNeighbours(pKeyBytes);
               success = true;
             } catch (err) {
-              console.warn(`[Mapper] Attempt ${attempt}/${maxAttempts} failed for ${node.name}: ${err.message}`);
+              console.warn(`[Mapper] Attempt ${attempt}/${maxAttempts} failed for ${node.name}: ${err?.message || err || "unknown error"}`);
               if (attempt < maxAttempts) {
                 await this.host.utils.sleep(3000); // Wait 3 seconds before retry
               }
@@ -213,7 +213,7 @@ export default class MapperModule {
       console.log(`[Mapper] Generated interactive map: ${htmlPath}`);
 
     } catch (err) {
-      console.error("[Mapper] Fatal crawl exception:", err.message);
+      console.error("[Mapper] Fatal crawl exception:", err?.message || err || "unknown error");
     } finally {
       this.crawling = false;
     }

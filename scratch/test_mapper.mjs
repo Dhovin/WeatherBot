@@ -120,8 +120,8 @@ async function startTest() {
         failed = true;
       }
 
-      // We expect links: local -> A, A -> local, A -> unknown
-      if (topologyData.links && topologyData.links.length === 3) {
+      // We expect links: A -> local, A -> unknown (since local node is not crawled)
+      if (topologyData.links && topologyData.links.length === 2) {
         console.log("  PASS: Neighbor links parsed correctly.");
       } else {
         console.error(`  FAIL: Link count is incorrect. Parsed:`, topologyData.links);
