@@ -44,6 +44,75 @@ const connection = new NodeJSSerialConnection(port);
 const channels = {};
 const activeModules = [];
 
+let sendQueue = Promise.resolve();
+
+async function queueSend(sendFn, description = "Message") {
+  const maxRetries = 3;
+  let attempt = 0;
+  let confirmed = false;
+
+  const runAttempt = async () => {
+    attempt++;
+    return new Promise(async (resolve) => {
+      let confirmedListener;
+      let timeoutTimer;
+
+      const cleanup = () => {
+        if (confirmedListener) {
+          connection.off(Constants.PushCodes.SendConfirmed, confirmedListener);
+        }
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
+      };
+
+      // Set up confirmation listener
+      confirmedListener = (data) => {
+        console.log(`[Host] Send confirmed for ${description} (ackCode: ${data.ackCode}, roundTrip: ${data.roundTrip}ms)`);
+        confirmed = true;
+        cleanup();
+        resolve(true);
+      };
+      connection.on(Constants.PushCodes.SendConfirmed, confirmedListener);
+
+      // Set up timeout (15 seconds)
+      timeoutTimer = setTimeout(() => {
+        console.warn(`[Host] Send timeout (15s) for ${description} (Attempt ${attempt}/${maxRetries})`);
+        cleanup();
+        resolve(false);
+      }, 15000);
+
+      try {
+        await sendFn();
+      } catch (err) {
+        console.error(`[Host] Serial send error for ${description}:`, err.message);
+        cleanup();
+        resolve(false);
+      }
+    });
+  };
+
+  const resultPromise = sendQueue.then(async () => {
+    while (attempt < maxRetries && !confirmed) {
+      if (attempt > 0) {
+        console.log(`[Host] Retrying transmission for ${description} in 3 seconds...`);
+        await utils.sleep(3000);
+      }
+      await runAttempt();
+    }
+
+    if (!confirmed) {
+      console.warn(`[Host] Warning: ${description} was sent but not confirmed by any repeater after ${maxRetries} attempts.`);
+    }
+  });
+
+  sendQueue = resultPromise.catch((err) => {
+    console.error(`[Host] Queue send exception for ${description}:`, err.message);
+  });
+
+  return resultPromise;
+}
+
 const host = {
   VERSION,
   config,
@@ -52,11 +121,18 @@ const host = {
   utils,
   
   async sendDM(publicKey, text) {
-    await connection.sendTextMessage(publicKey, text, Constants.TxtTypes.Plain);
+    const shortPub = Buffer.from(publicKey).toString('hex').slice(0, 8);
+    await queueSend(
+      () => connection.sendTextMessage(publicKey, text, Constants.TxtTypes.Plain),
+      `DM to ${shortPub}`
+    );
   },
   
   async sendChannelMessage(channelIdx, text) {
-    await connection.sendChannelTextMessage(channelIdx, text);
+    await queueSend(
+      () => connection.sendChannelTextMessage(channelIdx, text),
+      `Channel msg on ch index ${channelIdx}`
+    );
   },
   
   async findChannelByName(name) {
