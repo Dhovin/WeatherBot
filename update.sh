@@ -20,8 +20,8 @@ if [ ! -f "$DIR/package.json" ]; then
   fi
 
   # 2. Check systemd service configuration file
-  if [ -z "$RESOLVED_DIR" ] && [ -f "/etc/systemd/system/weatherbot.service" ]; then
-    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/weatherbot.service | cut -d= -f2 | xargs)
+  if [ -z "$RESOLVED_DIR" ] && [ -f "/etc/systemd/system/meshbot.service" ]; then
+    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/meshbot.service | cut -d= -f2 | xargs)
     if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
       RESOLVED_DIR="$SYSTEMD_DIR"
     fi
@@ -29,7 +29,7 @@ if [ ! -f "$DIR/package.json" ]; then
 
   # 3. Query active systemd service
   if [ -z "$RESOLVED_DIR" ]; then
-    SYSTEMD_DIR=$(systemctl show weatherbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
+    SYSTEMD_DIR=$(systemctl show meshbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
     if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
       RESOLVED_DIR="$SYSTEMD_DIR"
     fi
@@ -48,12 +48,15 @@ if [ ! -f "$DIR/package.json" ]; then
 
   # 5. Check common installation directories
   if [ -z "$RESOLVED_DIR" ]; then
-    for path in "/opt/weatherbot" \
+    for path in "/opt/meshbot" \
+                "/home/$SUDO_USER_NAME/meshbot" \
+                "/home/$SUDO_USER_NAME/Documents/GitHub/meshbot" \
+                "/home/$SUDO_USER_NAME/MeshBot" \
+                "/home/$SUDO_USER_NAME/Documents/GitHub/MeshBot" \
+                "/root/meshbot" \
+                "/opt/weatherbot" \
                 "/home/$SUDO_USER_NAME/weatherbot" \
-                "/home/$SUDO_USER_NAME/Documents/GitHub/weatherbot" \
-                "/home/$SUDO_USER_NAME/WeatherBot" \
-                "/home/$SUDO_USER_NAME/Documents/GitHub/WeatherBot" \
-                "/root/weatherbot"; do
+                "/home/$SUDO_USER_NAME/Documents/GitHub/weatherbot"; do
       if [ -f "$path/package.json" ]; then
         RESOLVED_DIR="$path"
         break
@@ -64,7 +67,7 @@ if [ ! -f "$DIR/package.json" ]; then
   # 6. Perform a fast, pruned filesystem search in user's home and /opt
   if [ -z "$RESOLVED_DIR" ]; then
     FOUND_PATH=$(find "/home/$SUDO_USER_NAME" "/opt" -maxdepth 5 \( -name ".git" -o -name ".cache" -o -name ".npm" -o -name ".local" -o -name "node_modules" \) -prune -o -name "package.json" -print 2>/dev/null | while read -r pf; do
-      if grep -q '"name": "meshcore-weatherbot-us"' "$pf" 2>/dev/null; then
+      if grep -q '"name": "meshbot"' "$pf" 2>/dev/null || grep -q '"name": "meshcore-weatherbot-us"' "$pf" 2>/dev/null; then
         dirname "$pf"
         break
       fi
@@ -83,14 +86,18 @@ if [ ! -f "$DIR/package.json" ]; then
 fi
 
 echo "--------------------------------------------------"
-echo "         US WeatherBot Upgrade Script             "
+echo "             MeshBot Upgrade Script               "
 echo "--------------------------------------------------"
 echo "Working directory: $DIR"
 
 # 1. Stop service if active to release file locks during update
 WAS_ACTIVE=0
-if systemctl is-active --quiet weatherbot.service; then
-  echo "Stopping weatherbot service for update..."
+if systemctl is-active --quiet meshbot.service; then
+  echo "Stopping meshbot service for update..."
+  systemctl stop meshbot.service
+  WAS_ACTIVE=1
+elif systemctl is-active --quiet weatherbot.service; then
+  echo "Stopping legacy weatherbot service for update..."
   systemctl stop weatherbot.service
   WAS_ACTIVE=1
 fi
@@ -109,28 +116,32 @@ if [ $? -ne 0 ]; then
   echo "Error: npm install failed."
   # Try to restart service if it was running before exit
   if [ $WAS_ACTIVE -eq 1 ]; then
-    systemctl start weatherbot.service
+    if systemctl list-unit-files | grep -q meshbot.service; then
+      systemctl start meshbot.service
+    else
+      systemctl start weatherbot.service
+    fi
   fi
   exit 1
 fi
 
-# 4. Restart or start weatherbot systemd service
+# 4. Restart or start meshbot systemd service
 if [ $WAS_ACTIVE -eq 1 ]; then
-  echo "Starting weatherbot service..."
-  systemctl start weatherbot.service
+  echo "Starting meshbot service..."
+  systemctl start meshbot.service
   if [ $? -eq 0 ]; then
-    echo "WeatherBot service started successfully!"
+    echo "MeshBot service started successfully!"
   else
-    echo "Error: Failed to start weatherbot service."
+    echo "Error: Failed to start meshbot service."
     exit 1
   fi
 else
-  echo "WeatherBot service is not active. Enabling and starting..."
-  systemctl enable weatherbot.service
-  systemctl start weatherbot.service
+  echo "MeshBot service is not active. Enabling and starting..."
+  systemctl enable meshbot.service
+  systemctl start meshbot.service
 fi
 
 echo "--------------------------------------------------"
 echo "Upgrade complete! Current service status:"
 echo "--------------------------------------------------"
-systemctl status weatherbot.service --no-pager
+systemctl status meshbot.service --no-pager

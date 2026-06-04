@@ -6,14 +6,14 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-echo "Stopping weatherbot service..."
-systemctl stop weatherbot.service
+echo "Stopping meshbot service..."
+systemctl stop meshbot.service
 
-echo "Disabling weatherbot service..."
-systemctl disable weatherbot.service
+echo "Disabling meshbot service..."
+systemctl disable meshbot.service
 
 echo "Removing systemd service file..."
-SERVICE_FILE="/etc/systemd/system/weatherbot.service"
+SERVICE_FILE="/etc/systemd/system/meshbot.service"
 if [ -f "$SERVICE_FILE" ]; then
   rm "$SERVICE_FILE"
   echo "Removed $SERVICE_FILE"
@@ -24,18 +24,18 @@ fi
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
-if [ -d "/opt/weatherbot" ]; then
+if [ -d "/opt/meshbot" ]; then
   if [ -t 0 ]; then
-    read -p "Do you want to remove the installation directory /opt/weatherbot? (y/N) " -n 1 -r
+    read -p "Do you want to remove the installation directory /opt/meshbot? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-      rm -rf /opt/weatherbot
-      echo "Removed /opt/weatherbot"
+      rm -rf /opt/meshbot
+      echo "Removed /opt/meshbot"
     else
-      echo "Kept /opt/weatherbot"
+      echo "Kept /opt/meshbot"
     fi
   else
-    echo "Installation directory /opt/weatherbot exists. You can manually delete it using: sudo rm -rf /opt/weatherbot"
+    echo "Installation directory /opt/meshbot exists. You can manually delete it using: sudo rm -rf /opt/meshbot"
   fi
 fi
 

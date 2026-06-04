@@ -12,7 +12,7 @@ Always include headers in your fetches:
 
 ```javascript
 async function fetchNWS(url, contactEmail) {
-  const userAgent = `MeshCoreWeatherBot/1.1.0 (${contactEmail})`;
+  const userAgent = `MeshBot/1.1.0 (${contactEmail})`;
   const res = await fetch(url, {
     headers: {
       'User-Agent': userAgent,
@@ -119,7 +119,7 @@ async function resolveZip(zip, email) {
   const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
   const res = await fetch(url, {
     headers: {
-      'User-Agent': `MeshCoreWeatherBot/1.1.0 (${email})`
+      'User-Agent': `MeshBot/1.1.0 (${email})`
     }
   });
   if (!res.ok) throw new Error(`OSM HTTP error ${res.status}`);

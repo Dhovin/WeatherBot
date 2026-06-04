@@ -37,24 +37,6 @@
       },
       "//blitzRadiusMiles": "Storm alert threshold distance in miles around your position",
       "blitzRadiusMiles": 10,
-      "//blitzArea": "Bounding box coordinates for Blitzortung lightning event filtering",
-      "blitzArea": {
-        "minLat": 37.9072,
-        "minLon": -78.5369,
-        "maxLat": 39.9072,
-        "maxLon": -75.5369
-      },
-      "//compasNames": "Mapping of compass directions to full names for user display",
-      "compasNames": {
-        "N": "North",
-        "NE": "North-East",
-        "E": "East",
-        "SE": "South-East",
-        "S": "South",
-        "SW": "South-West",
-        "W": "West",
-        "NW": "North-West"
-      },
       "//meteoAlerts": "Severe Weather alert notifications settings",
       "meteoAlerts": {
         "//enabled": "Toggle to enable/disable automated weather alerts checking and broadcasts",
@@ -70,31 +52,13 @@
         "certaintyFilter": [
           "observed",
           "likely"
-        ],
-        "//messageTemplate": "Text pattern formatting layout structure for alert transmissions",
-        "messageTemplate": "{event} Alert for {region}\nEffective: {start} to {end}\nSeverity: {severity}\n{headline}",
-        "//severity": "Friendly names for NWS severity parameters",
-        "severity": {
-          "unknown": "Unknown",
-          "minor": "Minor",
-          "moderate": "Moderate",
-          "severe": "Severe",
-          "extreme": "Extreme"
-        },
-        "//certainty": "Friendly names for NWS certainty parameters",
-        "certainty": {
-          "observed": "Observed",
-          "likely": "Likely",
-          "possible": "Possible",
-          "unlikely": "Unlikely",
-          "unknown": "Unknown"
-        }
+        ]
       }
     },
     "testing": {},
     "mqtt": {
       "//iataCode": "Local airport IATA code used for identifying packet source topics",
-      "iataCode": "ORD",
+      "iataCode": "DFW",
       "//privateKey": "Optional 64-byte private key hex (scalar || prefix) for offline signature generation (leave blank to query device)",
       "privateKey": "",
       "//enabledPresets": "MQTT presets to enable by default (e.g. ntxmesh, meshmapper, analyzer-us)",

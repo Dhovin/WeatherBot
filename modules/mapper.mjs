@@ -8,6 +8,10 @@ export default class MapperModule {
   static async configure(askQuestion, currentConfig) {
     const config = { ...currentConfig };
 
+    const defaultRepeater = config.localRepeater || "Dhovin-rptr";
+    const localRepeater = await askQuestion(`Enter local repeater name or ID prefix to start crawl from [${defaultRepeater}]: `);
+    config.localRepeater = localRepeater || defaultRepeater;
+
     const defaultInterval = config.intervalHours || 2;
     const interval = await askQuestion(`Enter network mapping crawl interval in hours [${defaultInterval}]: `);
     config.intervalHours = parseFloat(interval) || defaultInterval;
@@ -122,15 +126,40 @@ export default class MapperModule {
       const maxCycles = this.config.maxCycles || 5;
       const successNeighbours = {}; // publicKeyHex -> neighbours array
       
-      const repeaters = [];
-      for (const [pubHex, node] of nodesMap.entries()) {
-        if (node.type === "repeater") {
-          repeaters.push({ pubHex, node });
+      const localRepeaterConfig = this.config.localRepeater;
+      let startNodePub = null;
+      if (localRepeaterConfig) {
+        const searchStr = localRepeaterConfig.toLowerCase();
+        for (const [pubHex, node] of nodesMap.entries()) {
+          if (node.name.toLowerCase().includes(searchStr) || pubHex.startsWith(searchStr)) {
+            startNodePub = pubHex;
+            console.log(`[Mapper] Found local repeater match in contacts database: ${node.name} (${pubHex.slice(0, 8)})`);
+            break;
+          }
+        }
+        if (!startNodePub) {
+          console.warn(`[Mapper] Configured localRepeater "${localRepeaterConfig}" was not found in contacts database. Falling back to all repeaters.`);
+        }
+      }
+
+      const crawledSet = new Set(); // set of pubHex we have attempted/queued to query
+      const repeatersQueue = []; // array of { pubHex, node }
+      
+      if (startNodePub) {
+        const node = nodesMap.get(startNodePub);
+        repeatersQueue.push({ pubHex: startNodePub, node });
+        crawledSet.add(startNodePub);
+      } else {
+        for (const [pubHex, node] of nodesMap.entries()) {
+          if (node.type === "repeater") {
+            repeatersQueue.push({ pubHex, node });
+            crawledSet.add(pubHex);
+          }
         }
       }
 
       for (let cycle = 1; cycle <= maxCycles; cycle++) {
-        const remaining = repeaters.filter(r => !successNeighbours[r.pubHex]);
+        const remaining = repeatersQueue.filter(r => !successNeighbours[r.pubHex]);
         if (remaining.length === 0) break;
 
         if (cycle > 1) {
@@ -155,6 +184,25 @@ export default class MapperModule {
             if (res && res.neighbours) {
               console.log(`[Mapper] Successfully retrieved ${res.neighbours.length} neighbors for ${node.name}.`);
               successNeighbours[pubHex] = res.neighbours;
+
+              // Expand queue with newly discovered neighbors if they are repeaters in our contacts
+              for (const neigh of res.neighbours) {
+                if (!neigh || !neigh.publicKeyPrefix || !(neigh.publicKeyPrefix instanceof Uint8Array || Buffer.isBuffer(neigh.publicKeyPrefix)) || neigh.publicKeyPrefix.length < 4) {
+                  continue;
+                }
+                const neighPrefixHex = Buffer.from(neigh.publicKeyPrefix).toString('hex');
+                const nodeKeys = Array.from(nodesMap.keys());
+                const matchedKey = nodeKeys.find(k => k.startsWith(neighPrefixHex));
+                if (matchedKey && !crawledSet.has(matchedKey)) {
+                  const neighNode = nodesMap.get(matchedKey);
+                  if (neighNode.type === "repeater") {
+                    console.log(`[Mapper] Discovered new repeater via crawl: ${neighNode.name} (${matchedKey.slice(0, 8)}). Adding to queue.`);
+                    repeatersQueue.push({ pubHex: matchedKey, node: neighNode });
+                    crawledSet.add(matchedKey);
+                    remaining.push({ pubHex: matchedKey, node: neighNode });
+                  }
+                }
+              }
             } else {
               console.warn(`[Mapper] Empty neighbor table returned for ${node.name}.`);
             }
@@ -178,8 +226,8 @@ export default class MapperModule {
       }
 
       // Log stats of crawl completion
-      const failedCount = repeaters.filter(r => !successNeighbours[r.pubHex]).length;
-      console.log(`[Mapper] Crawl finished. Discovered ${repeaters.length} repeaters, successfully queried ${Object.keys(successNeighbours).length}, failed ${failedCount}.`);
+      const failedCount = repeatersQueue.filter(r => !successNeighbours[r.pubHex]).length;
+      console.log(`[Mapper] Crawl finished. Discovered ${repeatersQueue.length} repeaters, successfully queried ${Object.keys(successNeighbours).length}, failed ${failedCount}.`);
 
       // 4. Resolve 8-byte neighbor prefixes to 32-byte full public keys
       const resolvedLinks = [];
@@ -225,6 +273,34 @@ export default class MapperModule {
 
       writeFileSync('topology.json', JSON.stringify(dbPayload, null, 2), 'utf8');
       console.log("[Mapper] Saved topology data to topology.json");
+
+      // Output CSV databases
+      try {
+        const nodesCsvHeader = "publicKeyHex,name,type,lat,lon\n";
+        const nodesCsvRows = finalNodes.map(node => {
+          const escapedName = (node.name || "").replace(/"/g, '""');
+          return `"${node.publicKeyHex}","${escapedName}","${node.type || ""}",${node.lat || 0},${node.lon || 0}`;
+        }).join("\n");
+        writeFileSync('topology_nodes.csv', nodesCsvHeader + nodesCsvRows, 'utf8');
+        console.log("[Mapper] Saved nodes data to topology_nodes.csv");
+
+        const linksCsvHeader = "from,to,snr,heardSecondsAgo\n";
+        const linksCsvRows = resolvedLinks.map(link => {
+          return `"${link.from}","${link.to}",${link.snr || 0},${link.heardSecondsAgo || 0}`;
+        }).join("\n");
+        writeFileSync('topology_links.csv', linksCsvHeader + linksCsvRows, 'utf8');
+        console.log("[Mapper] Saved links data to topology_links.csv");
+
+        // Write also to www folder if it exists
+        if (existsSync('www')) {
+          writeFileSync('www/topology_nodes.csv', nodesCsvHeader + nodesCsvRows, 'utf8');
+          console.log("[Mapper] Saved nodes data to www/topology_nodes.csv");
+          writeFileSync('www/topology_links.csv', linksCsvHeader + linksCsvRows, 'utf8');
+          console.log("[Mapper] Saved links data to www/topology_links.csv");
+        }
+      } catch (csvErr) {
+        console.error("[Mapper] Failed to write CSV output files:", csvErr.message);
+      }
 
       // 6. Generate Leaflet HTML map
       const htmlPath = this.config.mapHtmlPath || "mesh_map.html";

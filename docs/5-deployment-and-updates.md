@@ -8,7 +8,7 @@ This guide explains how to package your bot as a background service on Linux (`s
 
 Running your bot as a standard executable inside a shell terminal is fine for testing, but in production, it should run as a background service that auto-starts on boot and restarts automatically if it crashes.
 
-We configure this using Linux `systemd`. A typical service configuration (`/etc/systemd/system/weatherbot.service`) looks like this:
+We configure this using Linux `systemd`. A typical service configuration (`/etc/systemd/system/meshbot.service`) looks like this:
 
 ```ini
 [Unit]
@@ -18,7 +18,7 @@ After=network.target
 [Service]
 Type=simple
 User=dhovin                # Run under a non-root user for security
-WorkingDirectory=/opt/weatherbot
+WorkingDirectory=/opt/meshbot
 ExecStart=/usr/bin/node index.mjs
 Restart=on-failure
 RestartSec=10              # Wait 10 seconds before attempting crash recovery
@@ -48,7 +48,7 @@ fi
 # Detect the original non-root user
 SUDO_USER_NAME=${SUDO_USER:-$USER}
 
-DIR="/opt/weatherbot"
+DIR="/opt/meshbot"
 
 # Drop privileges to install npm packages as the original user
 echo "Installing dependencies..."
@@ -66,7 +66,7 @@ To avoid hardcoding version details inside your scripts, extract details dynamic
 VERSION=$(grep -o '"version": "[^"]*' "$DIR/package.json" | grep -o '[0-9.]*$' || echo "1.0.0")
 
 # Write systemd service description with version details
-cat <<EOF > "/etc/systemd/system/weatherbot.service"
+cat <<EOF > "/etc/systemd/system/meshbot.service"
 [Unit]
 Description=MeshCore Bot Service v$VERSION
 ...
@@ -90,26 +90,26 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 if [ ! -f "$DIR/package.json" ]; then
   # Running via curl pipe - resolve directory from active systemd service
   SYSTEMD_DIR=""
-  if [ -f "/etc/systemd/system/weatherbot.service" ]; then
-    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/weatherbot.service | cut -d= -f2 | xargs)
+  if [ -f "/etc/systemd/system/meshbot.service" ]; then
+    SYSTEMD_DIR=$(grep -E "^WorkingDirectory=" /etc/systemd/system/meshbot.service | cut -d= -f2 | xargs)
   fi
   if [ -z "$SYSTEMD_DIR" ]; then
-    SYSTEMD_DIR=$(systemctl show weatherbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
+    SYSTEMD_DIR=$(systemctl show meshbot.service -p WorkingDirectory 2>/dev/null | cut -d= -f2 | xargs)
   fi
   
   if [ -n "$SYSTEMD_DIR" ] && [ -f "$SYSTEMD_DIR/package.json" ]; then
     DIR="$SYSTEMD_DIR"
   else
     # Fallback to local searches
-    DIR="/opt/weatherbot"
+    DIR="/opt/meshbot"
   fi
 fi
 
 # 1. Stop service to clear serial port & module locks
 WAS_ACTIVE=0
-if systemctl is-active --quiet weatherbot.service; then
+if systemctl is-active --quiet meshbot.service; then
   echo "Stopping active service for update..."
-  systemctl stop weatherbot.service
+  systemctl stop meshbot.service
   WAS_ACTIVE=1
 fi
 
@@ -119,7 +119,7 @@ sudo -u "$SUDO_USER" npm install --prefix "$DIR"
 
 # 3. Bring service back up
 if [ $WAS_ACTIVE -eq 1 ]; then
-  systemctl start weatherbot.service
+  systemctl start meshbot.service
 fi
 ```
 This design makes upgrades safe, fast, and fully automated.

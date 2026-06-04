@@ -4,8 +4,16 @@ import * as utils from './utils.mjs';
 
 const VERSION = "1.1.0";
 
-// Load config safely without ESM experimental warning
-const config = JSON.parse(readFileSync(new URL('./config.json', import.meta.url)));
+// Load config (supports optional custom config file as command-line argument ending with .json)
+let configPath = new URL('./config.json', import.meta.url);
+for (const arg of process.argv.slice(2)) {
+  if (arg.endsWith('.json')) {
+    configPath = new URL(arg, `file://${process.cwd()}/`);
+    console.log(`Using custom configuration file: ${arg}`);
+    break;
+  }
+}
+const config = JSON.parse(readFileSync(configPath));
 
 // Auto-detect serial port if the configured one is not available
 async function resolveSerialPort(configuredPort) {
@@ -34,10 +42,11 @@ async function resolveSerialPort(configuredPort) {
   return configuredPort;
 }
 
-const configuredPort = process.argv[2] ?? config.port;
+const nonConfigArgs = process.argv.slice(2).filter(arg => !arg.endsWith('.json'));
+const configuredPort = nonConfigArgs[0] ?? config.port;
 const port = await resolveSerialPort(configuredPort);
 
-console.log(`US WeatherBot v${VERSION} starting...`);
+console.log(`MeshBot v${VERSION} starting...`);
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
 
@@ -141,8 +150,10 @@ const host = {
 };
 
 async function dispatchMessage(text, replyCallback, contact = null, info = {}) {
-  if (!text) return;
-  let cleanText = text.trim();
+  if (!text || typeof text !== 'string') return;
+  // Limit input length to prevent excessive memory usage or ReDoS
+  const safeText = text.length > 1000 ? text.slice(0, 1000) : text;
+  let cleanText = safeText.trim();
   
   // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
   cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
@@ -150,7 +161,7 @@ async function dispatchMessage(text, replyCallback, contact = null, info = {}) {
 
   // Core Host Commands
   if (lowerText === 'version' || lowerText === 'info') {
-    await replyCallback(`US WeatherBot v${VERSION}`);
+    await replyCallback(`MeshBot v${VERSION}`);
     return;
   }
 
@@ -225,6 +236,10 @@ async function loadModules() {
   }
 
   for (const modName of config.enabledModules) {
+    if (typeof modName !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(modName)) {
+      console.error(`Invalid module name skipped to prevent path traversal: ${modName}`);
+      continue;
+    }
     try {
       console.log(`Loading module: ${modName}...`);
       const modPath = `./modules/${modName}.mjs`;

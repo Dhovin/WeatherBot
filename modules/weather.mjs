@@ -23,7 +23,7 @@ export default class WeatherModule {
     }
     const email = await askQuestion(`Enter email address (required for NWS API User-Agent) [${defaultEmail}]: `);
     const selectedEmail = email || defaultEmail;
-    config.userAgent = `MeshCoreWeatherBot/1.1.0 (${selectedEmail})`;
+    config.userAgent = `MeshBot/1.1.0 (${selectedEmail})`;
 
     const defaultAlertsEnabled = config.meteoAlerts && config.meteoAlerts.enabled !== undefined ? (config.meteoAlerts.enabled ? "y" : "n") : "y";
     const alertsInput = await askQuestion(`Enable National Weather Service active alerts broadcast? (y/n) [${defaultAlertsEnabled}]: `);
@@ -190,7 +190,7 @@ export default class WeatherModule {
 
   // Helper for fetching NWS API endpoints
   async fetchNWS(url) {
-    const userAgent = this.config.userAgent || `MeshCoreWeatherBot/${this.host.VERSION} (contact@example.com)`;
+    const userAgent = this.config.userAgent || `MeshBot/${this.host.VERSION} (contact@example.com)`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': userAgent,
@@ -229,7 +229,7 @@ export default class WeatherModule {
     const url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=US&format=json`;
     const res = await fetch(url, {
       headers: {
-        'User-Agent': this.config.userAgent || `MeshCoreWeatherBot/${this.host.VERSION} (contact@example.com)`
+        'User-Agent': this.config.userAgent || `MeshBot/${this.host.VERSION} (contact@example.com)`
       }
     });
     if (!res.ok) throw new Error(`OSM HTTP error ${res.status}`);

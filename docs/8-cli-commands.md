@@ -107,7 +107,7 @@ Wraps systemd configuration and state control commands to manage the background 
 - **Actions**:
   - `install`: Runs the `install.sh` wizard to register, configure, and launch the background service daemon.
   - `uninstall`: Runs the `uninstall.sh` script to stop, disable, and clean up systemd daemon configurations.
-  - `status`: Inspects active daemon logs (`systemctl status weatherbot.service --no-pager`).
+  - `status`: Inspects active daemon logs (`systemctl status meshbot.service --no-pager`).
   - `restart`: Gracefully restarts the background systemd service daemon.
 - **Requirements**:
   - These service commands execute with `sudo` and require administrator privileges.

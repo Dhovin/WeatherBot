@@ -54,7 +54,7 @@ export function geoCode(lat, lon) {
 
   return fetch(url, {
     headers: {
-      'User-Agent': 'MeshCoreWeatherBot/1.0 (contact@example.com)'
+      'User-Agent': 'MeshBot/1.0 (contact@example.com)'
     }
   })
     .then(res => {

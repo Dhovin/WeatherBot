@@ -1,11 +1,13 @@
 import * as mqtt from 'mqtt';
 import readline from 'readline';
+import { Constants } from '@liamcottle/meshcore.js';
+import { createAuthToken } from './auth_token.mjs';
 
 const PRESETS = {
-  "analyzer-us": { name: "LetsMesh USA Analyzer", url: "wss://mqtt-us-v1.letsmesh.net:443/mqtt" },
-  "analyzer-eu": { name: "LetsMesh EU Analyzer", url: "wss://mqtt-eu-v1.letsmesh.net:443/mqtt" },
+  "analyzer-us": { name: "LetsMesh USA Analyzer", url: "wss://mqtt-us-v1.letsmesh.net:443/mqtt", audience: "mqtt-us-v1.letsmesh.net", requiresAuth: true },
+  "analyzer-eu": { name: "LetsMesh EU Analyzer", url: "wss://mqtt-eu-v1.letsmesh.net:443/mqtt", audience: "mqtt-eu-v1.letsmesh.net", requiresAuth: true },
   "nz-analyzer": { name: "Baird NZ Analyzer", url: "wss://meshcore-mqtt-1.baird.io:443" },
-  "meshmapper": { name: "MeshMapper Server", url: "wss://mqtt.meshmapper.cc:443/mqtt" },
+  "meshmapper": { name: "MeshMapper Server", url: "wss://mqtt.meshmapper.cc:443/mqtt", audience: "mqtt.meshmapper.cc", requiresAuth: true },
   "meshrank": { name: "MeshRank", url: "mqtts://meshrank.net:8883" },
   "waev": { name: "Waev", url: "wss://mqtt.waev.app:443/mqtt" },
   "meshomatic": { name: "Meshomatic US East", url: "wss://us-east.meshomatic.net:443/mqtt" },
@@ -122,16 +124,20 @@ export default class MqttModule {
     const iata = await askQuestion(`Enter local airport IATA code [${defaultIata}]: `);
     config.iataCode = (iata || defaultIata).toUpperCase();
 
+    const defaultPrivateKey = config.privateKey || "";
+    const pKey = await askQuestion(`Enter optional 64-byte private key hex (leave blank to query device) [${defaultPrivateKey}]: `);
+    config.privateKey = pKey || defaultPrivateKey;
+
     // Prompts for presets
     const presetNames = Object.keys(PRESETS).join(', ');
     console.log(`\nAvailable presets: ${presetNames}`);
     
-    const defaultEnabledPresets = (config.enabledPresets || ["ntxmesh"]).join(', ');
+    const defaultEnabledPresets = (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]).join(', ');
     const presetsInput = await askQuestion(`Enter preset brokers to enable (comma-separated) [${defaultEnabledPresets}]: `);
     
     const selectedPresets = presetsInput
       ? presetsInput.split(',').map(s => s.trim().toLowerCase()).filter(s => PRESETS[s])
-      : (config.enabledPresets || ["ntxmesh"]);
+      : (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]);
     
     config.enabledPresets = selectedPresets;
 
@@ -168,18 +174,90 @@ export default class MqttModule {
     this.config = config;
     this.clients = [];
     this.publicKeyHex = "unknown";
+    this.privateKeyHex = this.config.privateKey || null;
 
     console.log("[MQTT Forwarder] Module initializing...");
 
-    // Resolve public key
+    // Resolve public key and name
     try {
       const selfInfo = await this.host.connection.getSelfInfo(8000);
-      if (selfInfo && selfInfo.publicKey) {
-        this.publicKeyHex = Buffer.from(selfInfo.publicKey).toString('hex');
-        console.log(`[MQTT Forwarder] Resolved node public key: ${this.publicKeyHex}`);
+      if (selfInfo) {
+        if (selfInfo.publicKey) {
+          this.publicKeyHex = Buffer.from(selfInfo.publicKey).toString('hex');
+          console.log(`[MQTT Forwarder] Resolved node public key: ${this.publicKeyHex}`);
+        }
+        if (selfInfo.name) {
+          this.nodeName = selfInfo.name;
+          console.log(`[MQTT Forwarder] Resolved node name: ${this.nodeName}`);
+        }
       }
     } catch (err) {
-      console.warn("[MQTT Forwarder] Could not retrieve node public key automatically:", err.message);
+      console.warn("[MQTT Forwarder] Could not retrieve node identity automatically:", err.message);
+    }
+
+    // Try to export private key from the device if not configured manually
+    if (!this.privateKeyHex) {
+      try {
+        console.log("[MQTT Forwarder] Attempting to export private key from device...");
+        const privateKeyData = await new Promise(async (resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.host.connection.off(Constants.ResponseCodes.PrivateKey, onKey);
+            this.host.connection.off(Constants.ResponseCodes.Disabled, onDisabled);
+            this.host.connection.off(Constants.ResponseCodes.Err, onErr);
+            reject(new Error("Timeout waiting for private key export"));
+          }, 5000);
+
+          const self = this;
+          function onKey(data) {
+            clearTimeout(timer);
+            self.host.connection.off(Constants.ResponseCodes.PrivateKey, onKey);
+            self.host.connection.off(Constants.ResponseCodes.Disabled, onDisabled);
+            self.host.connection.off(Constants.ResponseCodes.Err, onErr);
+            resolve(data.privateKey);
+          }
+
+          function onDisabled() {
+            clearTimeout(timer);
+            self.host.connection.off(Constants.ResponseCodes.PrivateKey, onKey);
+            self.host.connection.off(Constants.ResponseCodes.Disabled, onDisabled);
+            self.host.connection.off(Constants.ResponseCodes.Err, onErr);
+            resolve(null);
+          }
+
+          function onErr(data) {
+            clearTimeout(timer);
+            self.host.connection.off(Constants.ResponseCodes.PrivateKey, onKey);
+            self.host.connection.off(Constants.ResponseCodes.Disabled, onDisabled);
+            self.host.connection.off(Constants.ResponseCodes.Err, onErr);
+            resolve(null);
+          }
+
+          this.host.connection.on(Constants.ResponseCodes.PrivateKey, onKey);
+          this.host.connection.on(Constants.ResponseCodes.Disabled, onDisabled);
+          this.host.connection.on(Constants.ResponseCodes.Err, onErr);
+          
+          if (typeof this.host.connection.sendCommandExportPrivateKey === 'function') {
+            await this.host.connection.sendCommandExportPrivateKey();
+          } else {
+            clearTimeout(timer);
+            this.host.connection.off(Constants.ResponseCodes.PrivateKey, onKey);
+            this.host.connection.off(Constants.ResponseCodes.Disabled, onDisabled);
+            this.host.connection.off(Constants.ResponseCodes.Err, onErr);
+            resolve(null);
+          }
+        });
+
+        if (privateKeyData) {
+          this.privateKeyHex = Buffer.from(privateKeyData).toString('hex');
+          console.log("[MQTT Forwarder] ✓ Successfully exported private key from device.");
+        } else {
+          console.log("[MQTT Forwarder] ✗ Private key export is disabled on this device. Will use on-device signing.");
+        }
+      } catch (err) {
+        console.warn("[MQTT Forwarder] ✗ Could not export private key from device:", err.message);
+      }
+    } else {
+      console.log("[MQTT Forwarder] ✓ Using private key from configuration.");
     }
 
     const iata = (this.config.iataCode || "ORD").toUpperCase();
@@ -196,6 +274,7 @@ export default class MqttModule {
           name: preset.name,
           url: preset.url,
           audience: preset.audience,
+          requiresAuth: preset.requiresAuth,
           token: this.config.token // can fall back to global token if set
         });
       }
@@ -207,6 +286,7 @@ export default class MqttModule {
           name: cb.name,
           url: cb.url,
           audience: cb.audience,
+          requiresAuth: cb.requiresAuth,
           token: cb.token
         });
       }
@@ -221,10 +301,26 @@ export default class MqttModule {
         const options = {
           reconnectPeriod: 5000,
           connectTimeout: 30 * 1000,
+          rejectUnauthorized: false,
         };
 
-        // If JWT token is present, configure auth
-        if (target.token) {
+        // Handle JWT token authentication dynamically or via custom static token
+        if (target.requiresAuth) {
+          try {
+            console.log(`[MQTT Forwarder] Generating JWT auth token for ${target.name}...`);
+            const token = await createAuthToken(
+              this.publicKeyHex,
+              this.privateKeyHex,
+              86400,
+              this.host.connection,
+              { aud: target.audience }
+            );
+            options.username = `v1_${this.publicKeyHex.toUpperCase()}`;
+            options.password = token;
+          } catch (err) {
+            console.error(`[MQTT Forwarder] Failed to generate auth token for ${target.name}:`, err.message);
+          }
+        } else if (target.token) {
           options.username = `v1_${this.publicKeyHex.toUpperCase()}`;
           options.password = target.token;
         }
@@ -235,7 +331,11 @@ export default class MqttModule {
         client.on('connect', () => {
           console.log(`[MQTT Forwarder] Connected to ${target.name}`);
           const statusTopic = `meshcore/${iata}/${this.publicKeyHex}/status`;
-          client.publish(statusTopic, JSON.stringify({ status: "online", timestamp: new Date().toISOString() }), { retain: true });
+          client.publish(statusTopic, JSON.stringify({
+            status: "online",
+            timestamp: new Date().toISOString(),
+            name: this.nodeName || "MeshBot Observer"
+          }), { retain: true });
         });
 
         client.on('error', (err) => {
@@ -252,14 +352,43 @@ export default class MqttModule {
     this.host.connection.on('rx', (frame) => this.forwardFrame('rx', frame));
     this.host.connection.on('tx', (frame) => this.forwardFrame('tx', frame));
 
+    // Start periodic JWT token refresh interval (every 6 hours)
+    this.refreshInterval = setInterval(async () => {
+      console.log("[MQTT Forwarder] Refreshing active MQTT JWT tokens...");
+      for (const item of this.clients) {
+        if (item.target.requiresAuth) {
+          try {
+            const token = await createAuthToken(
+              this.publicKeyHex,
+              this.privateKeyHex,
+              86400,
+              this.host.connection,
+              { aud: item.target.audience }
+            );
+            item.client.options.password = token;
+            console.log(`[MQTT Forwarder] Refreshed JWT token in client options for ${item.target.name}`);
+          } catch (err) {
+            console.error(`[MQTT Forwarder] Failed to refresh token for ${item.target.name}:`, err.message);
+          }
+        }
+      }
+    }, 6 * 60 * 60 * 1000);
+
     // Register shutdown hooks
     this.shutdownHandler = () => {
+      if (this.refreshInterval) {
+        clearInterval(this.refreshInterval);
+      }
       console.log("\n[MQTT Forwarder] Gracefully disconnecting from brokers...");
       const statusTopic = `meshcore/${iata}/${this.publicKeyHex}/status`;
       
       for (const { client, target } of this.clients) {
         if (client.connected) {
-          client.publish(statusTopic, JSON.stringify({ status: "offline", timestamp: new Date().toISOString() }), { retain: true }, () => {
+          client.publish(statusTopic, JSON.stringify({
+            status: "offline",
+            timestamp: new Date().toISOString(),
+            name: this.nodeName || "MeshBot Observer"
+          }), { retain: true }, () => {
             client.end();
             console.log(`[MQTT Forwarder] Closed connection to ${target.name}`);
           });
@@ -276,7 +405,11 @@ export default class MqttModule {
   }
 
   forwardFrame(direction, frame) {
-    if (!frame || frame.length === 0) return;
+    if (!frame || !(frame instanceof Uint8Array || Buffer.isBuffer(frame)) || frame.length === 0) return;
+    if (frame.length > 65535) {
+      console.warn(`[MQTT Forwarder] Skipped excessively large frame allocation: ${frame.length} bytes`);
+      return;
+    }
     const rawHex = Buffer.from(frame).toString('hex');
     const iata = (this.config.iataCode || "ORD").toUpperCase();
     const packetsTopic = `meshcore/${iata}/${this.publicKeyHex}/packets`;

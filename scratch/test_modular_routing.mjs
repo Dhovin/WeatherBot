@@ -43,7 +43,7 @@ async function runTest() {
   const weatherConfig = {
     weatherAlarm: "06:00",
     zipCode: "20001",
-    userAgent: "MeshCoreWeatherBot/1.1.0 (contact@example.com)",
+    userAgent: "MeshBot/1.1.0 (contact@example.com)",
     timers: {
       blitzCollection: 600000,
       meteoAlerts: 600000

@@ -36,7 +36,8 @@ mockServer.listen(mockBrokerPort, '127.0.0.1', async () => {
     const mockConnection = new EventEmitter();
     mockConnection.getSelfInfo = async () => {
       return {
-        publicKey: new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd])
+        publicKey: new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd]),
+        name: "Test Companion Node"
       };
     };
 
@@ -66,10 +67,10 @@ mockServer.listen(mockBrokerPort, '127.0.0.1', async () => {
 
     // Assert status message was published
     const statusPayload = publishedData.find(d => d.includes('"status":"online"'));
-    if (statusPayload && statusPayload.toLowerCase().includes("lax") && statusPayload.toLowerCase().includes("aabbccdd")) {
-      console.log("  PASS: Connection status published correctly.");
+    if (statusPayload && statusPayload.toLowerCase().includes("lax") && statusPayload.toLowerCase().includes("aabbccdd") && statusPayload.includes('"name":"Test Companion Node"')) {
+      console.log("  PASS: Connection status and human-readable name published correctly.");
     } else {
-      console.error(`  FAIL: Connection status not found or incorrect. Published data:`, publishedData);
+      console.error(`  FAIL: Connection status or name not found or incorrect. Published data:`, publishedData);
       failed = true;
     }
 

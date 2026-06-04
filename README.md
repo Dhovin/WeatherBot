@@ -42,7 +42,7 @@ Configure your device port, active channels, and modules by editing `config.json
   "modules": {
     "weather": {
       "weatherAlarm": "06:00", // Daily forecast broadcast time (24-hour format)
-      "userAgent": "MeshCoreWeatherBot/1.1.0 (contact@example.com)", // Required for NWS API policy
+      "userAgent": "MeshBot/1.1.0 (contact@example.com)", // Required for NWS API policy
       "zipCode": "20001", // US ZIP code for auto-geocoding (replaces myPosition and blitzArea if set)
       "myPosition": {
         "lat": 38.9072,
@@ -112,7 +112,7 @@ You can install MeshBot as a background service on Linux that auto-starts on sys
 
 ### Option A: One-Liner Installation (via curl)
 
-You can download and run the installer directly using `curl`. This standalone mode will automatically clone the repository into `/opt/weatherbot`, run the Configuration Wizard, install dependencies, and register the systemd service:
+You can download and run the installer directly using `curl`. This standalone mode will automatically clone the repository into `/opt/meshbot`, run the Configuration Wizard, install dependencies, and register the systemd service:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Dhovin/WeatherBot/main/install.sh | sudo bash
@@ -138,28 +138,43 @@ If you have already cloned the repository manually, run the installation script 
 
 ---
 
-## Manual Execution (Windows / macOS)
+## Windows Installation & Configuration
 
-### 1. Install dependencies:
-```bash
-npm install
+You can configure and install MeshBot on Windows using the PowerShell setup wizard script.
+
+### 1. Run the Setup Wizard:
+Open PowerShell in the project directory and run the installation script:
+```powershell
+.\install.ps1
 ```
+This wizard will:
+* Detect your Node.js environment.
+* Install npm dependencies (`npm install`).
+* Scan and list all active COM port connections on your system.
+* Walk you through the interactive configuration wizard (setting serial port, ZIP code, email, and local repeater).
+* Write configuration updates to `config.json`.
+* Optionally register the bot to run automatically on Windows startup by creating a shortcut in your Startup directory.
 
-### 2. Link/Run via CLI:
-You can link the binary to run `meshbot` globally:
+### 2. Running & Uninstalling on Windows:
+* **Running**: Double-click `run.bat` in the root workspace folder to launch the bot runtime directly in a command prompt window.
+* **Uninstalling**: Run the PowerShell uninstaller script to remove the startup shortcut and optionally delete the node dependencies and configurations:
+  ```powershell
+  .\uninstall.ps1
+  ```
+
+### 3. Manual/macOS Execution:
+If running on macOS or executing manually:
+
 ```bash
+# Install dependencies
+npm install
+
+# Link and run globally
 npm link
 meshbot start
-```
 
-Or run via the local script runner:
-```bash
+# Or run via local package runner
 npm run cli -- start
-```
-
-Or execute directly with Node:
-```bash
-node index.mjs COM3
 ```
 
 ---
@@ -191,5 +206,5 @@ If the bot successfully responds to direct messages (DMs) but ignores commands s
 ### 4. Viewing Background Service Logs
 If you installed the bot as a systemd service, you can follow its live runtime logs using `journalctl`:
 ```bash
-sudo journalctl -u weatherbot.service -f -n 50
+sudo journalctl -u meshbot.service -f -n 50
 ```

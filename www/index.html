@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MeshBot Topology Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: rgba(17, 24, 39, 0.85);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-color: #3b82f6;
+      --accent-hover: #2563eb;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa, #3b82f6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    header h1::before {
+      content: '📡';
+      font-size: 1.3rem;
+      -webkit-text-fill-color: initial;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .main-container {
+      flex: 1;
+      display: flex;
+      position: relative;
+      height: calc(100vh - 70px);
+    }
+
+    #map {
+      flex: 1;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Floating control panel */
+    .control-panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 380px;
+      max-height: calc(100% - 40px);
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      z-index: 1000;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      overflow-y: auto;
+    }
+
+    .panel-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .panel-section h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.05rem;
+      color: #60a5fa;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.5rem;
+    }
+
+    /* File dropzone */
+    .dropzone {
+      border: 2px dashed rgba(59, 130, 246, 0.3);
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(59, 130, 246, 0.03);
+      transition: all 0.2s ease;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-color);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .dropzone p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .dropzone label {
+      display: inline-block;
+      padding: 0.4rem 0.8rem;
+      background: var(--accent-color);
+      color: white;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .dropzone label:hover {
+      background: var(--accent-hover);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    /* Auto load status */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      padding: 0.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .status-dot.active {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .status-dot.error {
+      background: var(--error);
+      box-shadow: 0 0 8px var(--error);
+    }
+
+    /* Stats display */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .stat-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #60a5fa;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Legend */
+    .legend-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+
+    /* Table view styling */
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: #1e293b !important;
+      color: var(--text-main) !important;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    }
+
+    .node-popup-title {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      color: #60a5fa;
+      margin-bottom: 0.25rem;
+    }
+
+    .node-popup-detail {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Dark Mode Leaflet overrides */
+    .leaflet-control-zoom {
+      border: 1px solid var(--card-border) !important;
+      box-shadow: none !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+    }
+    .leaflet-control-zoom a {
+      background: var(--card-bg) !important;
+      color: var(--text-main) !important;
+      border-bottom: 1px solid var(--card-border) !important;
+      backdrop-filter: blur(8px);
+    }
+    .leaflet-control-zoom a:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+    }
+
+    .error-log {
+      color: #f87171;
+      font-size: 0.75rem;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      padding: 0.5rem;
+      border-radius: 6px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>MeshBot Topology</h1>
+      <div class="subtitle">Real-time Node Discovery & RF Link Map</div>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div id="map"></div>
+
+    <div class="control-panel">
+      <!-- Connection / File load status -->
+      <div class="panel-section">
+        <h3>Data Source</h3>
+        <div class="status-badge">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Awaiting mapping CSV data...</span>
+        </div>
+        <div class="error-log" id="errorLog"></div>
+        
+        <!-- Drag & Drop Zone -->
+        <div class="dropzone" id="dropzone">
+          <p>Drag & drop <b>nodes</b> and <b>links</b> CSV files here</p>
+          <p style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.8rem;">(Select both files together)</p>
+          <label for="fileInput">Choose Files</label>
+          <input type="file" id="fileInput" class="file-input" multiple accept=".csv" />
+        </div>
+      </div>
+
+      <!-- Graph Statistics -->
+      <div class="panel-section">
+        <h3>Network Statistics</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="nodeCount">-</div>
+            <div class="stat-label">Discovered Nodes</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="linkCount">-</div>
+            <div class="stat-label">Active Links</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Legend -->
+      <div class="panel-section">
+        <h3>Map Indicators</h3>
+        <div class="legend-list">
+          <div style="font-weight: 600; margin-top: 0.25rem;">Node Types:</div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #2ecc71;"></div>
+            <span>Local Base Station (Green)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #3498db;"></div>
+            <span>Network Repeaters (Blue)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #9b59b6;"></div>
+            <span>Room Servers (Purple)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #95a5a6;"></div>
+            <span>Unknown Target Prefix (Grey)</span>
+          </div>
+          
+          <div style="font-weight: 600; margin-top: 0.5rem;">Link Quality (SNR):</div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #2ecc71;"></div>
+            <span>&ge; 5 dB (Excellent Link)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #3498db;"></div>
+            <span>0 to 5 dB (Stable Link)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #f39c12;"></div>
+            <span>-5 to 0 dB (Weak Link)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #e74c3c;"></div>
+            <span>&lt; -5 dB (Degraded Link)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize map centering on standard US center
+    const map = L.map('map', {
+      zoomControl: true
+    }).setView([38.9072, -77.0369], 12);
+
+    // Dark Map Carto tiles
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20
+    }).addTo(map);
+
+    let mapLayersGroup = L.layerGroup().addTo(map);
+
+    // Standard CSV Parser state-machine
+    function parseCSV(text) {
+      const lines = [];
+      let row = [""];
+      let insideQuote = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i+1];
+        if (char === '"') {
+          if (insideQuote && nextChar === '"') {
+            row[row.length - 1] += '"';
+            i++;
+          } else {
+            insideQuote = !insideQuote;
+          }
+        } else if (char === ',' && !insideQuote) {
+          row.push("");
+        } else if ((char === '\r' || char === '\n') && !insideQuote) {
+          if (char === '\r' && nextChar === '\n') i++;
+          lines.push(row);
+          row = [""];
+        } else {
+          row[row.length - 1] += char;
+        }
+      }
+      if (row.length > 1 || row[0] !== "") {
+        lines.push(row);
+      }
+
+      if (lines.length === 0) return [];
+      const headers = lines[0].map(h => h.trim());
+      const result = [];
+      for (let i = 1; i < lines.length; i++) {
+        const rowObj = {};
+        const values = lines[i];
+        headers.forEach((header, idx) => {
+          rowObj[header] = values[idx] !== undefined ? values[idx] : "";
+        });
+        result.push(rowObj);
+      }
+      return result;
+    }
+
+    let parsedNodes = null;
+    let parsedLinks = null;
+
+    // Handle files upload / drop
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      handleFiles(files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+
+    function handleFiles(files) {
+      if (files.length === 0) return;
+
+      const fileArray = Array.from(files);
+      const nodesFile = fileArray.find(f => f.name.includes('nodes'));
+      const linksFile = fileArray.find(f => f.name.includes('links'));
+
+      if (!nodesFile || !linksFile) {
+        showError("Please provide both the nodes and links CSV files together.");
+        return;
+      }
+
+      const statusText = document.getElementById('statusText');
+      const statusDot = document.getElementById('statusDot');
+      statusText.innerText = "Parsing uploaded files...";
+
+      const readNodes = new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(parseCSV(e.target.result));
+        reader.readAsText(nodesFile);
+      });
+
+      const readLinks = new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(parseCSV(e.target.result));
+        reader.readAsText(linksFile);
+      });
+
+      Promise.all([readNodes, readLinks]).then(([nodes, links]) => {
+        parsedNodes = nodes;
+        parsedLinks = links;
+        document.getElementById('errorLog').style.display = 'none';
+        statusText.innerText = "Loaded via drag-and-drop";
+        statusDot.className = "status-dot active";
+        renderTopology();
+      }).catch(err => {
+        showError(`Failed to parse CSVs: ${err.message}`);
+      });
+    }
+
+    function showError(msg) {
+      const errorLog = document.getElementById('errorLog');
+      errorLog.innerText = msg;
+      errorLog.style.display = 'block';
+      
+      const statusText = document.getElementById('statusText');
+      const statusDot = document.getElementById('statusDot');
+      statusText.innerText = "Load failed";
+      statusDot.className = "status-dot error";
+    }
+
+    // Try auto-fetching the CSV files from local webserver relative path
+    async function tryAutoFetch() {
+      const statusText = document.getElementById('statusText');
+      const statusDot = document.getElementById('statusDot');
+      
+      try {
+        statusText.innerText = "Querying host for CSV files...";
+        
+        let resNodes, resLinks;
+        try {
+          resNodes = await fetch('./topology_nodes.csv');
+          if (!resNodes.ok) throw new Error();
+          resLinks = await fetch('./topology_links.csv');
+          if (!resLinks.ok) throw new Error();
+        } catch (localErr) {
+          // Fallback to parent directory if hosted at repo root
+          resNodes = await fetch('../topology_nodes.csv');
+          if (!resNodes.ok) throw new Error(`Fetch nodes status: ${resNodes.status}`);
+          resLinks = await fetch('../topology_links.csv');
+          if (!resLinks.ok) throw new Error(`Fetch links status: ${resLinks.status}`);
+        }
+        
+        const textNodes = await resNodes.text();
+        const textLinks = await resLinks.text();
+
+        parsedNodes = parseCSV(textNodes);
+        parsedLinks = parseCSV(textLinks);
+
+        statusText.innerText = "Connected: Auto-fetched CSVs";
+        statusDot.className = "status-dot active";
+        renderTopology();
+      } catch (err) {
+        // Log to console - expected if loaded locally via file:// due to CORS
+        console.warn("Auto-fetch blocked or failed (CORS if file://, or server offline):", err.message);
+        statusText.innerText = "Local mode: drag CSVs below";
+        statusDot.className = "status-dot";
+      }
+    }
+
+    function getNodeColor(type) {
+      if (type === 'local') return '#2ecc71';
+      if (type === 'repeater') return '#3498db';
+      if (type === 'room') return '#9b59b6';
+      if (type === 'unknown') return '#95a5a6';
+      return '#e67e22';
+    }
+
+    function getLinkColor(snr) {
+      if (snr >= 5) return '#2ecc71';
+      if (snr >= 0) return '#3498db';
+      if (snr >= -5) return '#f39c12';
+      return '#e74c3c';
+    }
+
+    // Main map renderer
+    function renderTopology() {
+      if (!parsedNodes || !parsedLinks) return;
+
+      // Clear existing layers
+      mapLayersGroup.clearLayers();
+
+      const markers = {};
+      const validNodes = [];
+
+      // Add node markers
+      parsedNodes.forEach(node => {
+        const lat = parseFloat(node.lat);
+        const lon = parseFloat(node.lon);
+
+        if (!isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0)) {
+          validNodes.push({ ...node, lat, lon });
+          
+          const marker = L.circleMarker([lat, lon], {
+            radius: node.type === 'local' ? 10 : 8,
+            fillColor: getNodeColor(node.type),
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+          });
+
+          marker.bindPopup(`
+            <div>
+              <div class="node-popup-title">${node.name || 'Unknown Node'}</div>
+              <div class="node-popup-detail">ID: ${node.publicKeyHex.slice(0, 16)}...</div>
+              <div style="margin-top: 5px; font-size: 11px;">Type: <b>${node.type.toUpperCase()}</b></div>
+              <div style="font-size: 11px;">Position: ${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+            </div>
+          `);
+
+          marker.addTo(mapLayersGroup);
+          markers[node.publicKeyHex] = { lat, lon, name: node.name };
+        }
+      });
+
+      // Add polylines for links
+      let renderedLinks = 0;
+      parsedLinks.forEach(link => {
+        const fromNode = markers[link.from];
+        const toNode = markers[link.to];
+        const snr = parseFloat(link.snr);
+
+        if (fromNode && toNode) {
+          const color = getLinkColor(snr);
+          const polyline = L.polyline([[fromNode.lat, fromNode.lon], [toNode.lat, toNode.lon]], {
+            color: color,
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '5, 5'
+          });
+
+          const heardMin = Math.round(parseFloat(link.heardSecondsAgo || 0) / 60);
+
+          polyline.bindTooltip(`
+            Link: ${fromNode.name} ➔ ${toNode.name}<br>
+            <b>SNR: ${snr.toFixed(1)} dB</b><br>
+            Heard: ${heardMin} min ago
+          `, { sticky: true });
+
+          polyline.addTo(mapLayersGroup);
+          renderedLinks++;
+        }
+      });
+
+      // Update control panel stats
+      document.getElementById('nodeCount').innerText = validNodes.length;
+      document.getElementById('linkCount').innerText = renderedLinks;
+
+      // Auto center map on active nodes
+      if (validNodes.length > 0) {
+        const bounds = L.latLngBounds(validNodes.map(n => [n.lat, n.lon]));
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    }
+
+    // Run auto fetch sequence on load
+    tryAutoFetch();
+  </script>
+</body>
+</html>

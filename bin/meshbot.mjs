@@ -259,8 +259,8 @@ async function main() {
       let shellCmd = '';
       if (action === 'install') shellCmd = 'sudo ./install.sh';
       else if (action === 'uninstall') shellCmd = 'sudo ./uninstall.sh';
-      else if (action === 'status') shellCmd = 'sudo systemctl status weatherbot.service --no-pager';
-      else if (action === 'restart') shellCmd = 'sudo systemctl restart weatherbot.service';
+      else if (action === 'status') shellCmd = 'sudo systemctl status meshbot.service --no-pager';
+      else if (action === 'restart') shellCmd = 'sudo systemctl restart meshbot.service';
 
       console.log(`Running: ${shellCmd}`);
       const shellProc = spawn('sh', ['-c', shellCmd], {

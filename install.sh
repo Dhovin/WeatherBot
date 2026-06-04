@@ -35,7 +35,7 @@ fi
 
 # Check if we are running in standalone mode (package.json not found in script dir or pwd)
 if [ ! -f "$DIR/package.json" ] && [ ! -f "$(pwd)/package.json" ]; then
-  INSTALL_DIR="/opt/weatherbot"
+  INSTALL_DIR="/opt/meshbot"
   echo "Standalone mode detected (package.json not found in $DIR or $(pwd))."
   echo "Installing to $INSTALL_DIR..."
   
@@ -79,7 +79,7 @@ fi
 # Interactive Configuration Wizard (skipped in non-interactive sessions)
 if [ -t 1 ]; then
   echo "--------------------------------------------------"
-  echo "           US WeatherBot Config Wizard            "
+  echo "               MeshBot Config Wizard              "
   echo "--------------------------------------------------"
   cd "$DIR"
 
@@ -99,6 +99,8 @@ if [ -t 1 ]; then
 
   CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.weather?.zipCode || cfg.zipCode || '')")
   CURRENT_EMAIL="contact@example.com"
+  CURRENT_REPEATER=$($NODE_PATH -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.mapper?.localRepeater || '')")
+  CURRENT_REPEATER=$(echo "$CURRENT_REPEATER" | tr -d '\r' | tr -d ' ')
 
   read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT < /dev/tty
   USER_PORT=${USER_PORT:-$CURRENT_PORT}
@@ -109,6 +111,9 @@ if [ -t 1 ]; then
   read -p "Enter email address (required for NWS API User-Agent) [$CURRENT_EMAIL]: " USER_EMAIL < /dev/tty
   USER_EMAIL=${USER_EMAIL:-$CURRENT_EMAIL}
 
+  read -p "Enter local repeater node name or ID prefix [$CURRENT_REPEATER]: " USER_REPEATER < /dev/tty
+  USER_REPEATER=${USER_REPEATER:-$CURRENT_REPEATER}
+
   # Update config.json
   $NODE_PATH -e "
     import fs from 'fs';
@@ -117,9 +122,11 @@ if [ -t 1 ]; then
     if (!config.modules) config.modules = {};
     if (!config.modules.weather) config.modules.weather = {};
     config.modules.weather.zipCode = process.argv[2];
-    config.modules.weather.userAgent = 'MeshCoreWeatherBot/1.1.0 (' + process.argv[3] + ')';
+    config.modules.weather.userAgent = 'MeshBot/1.1.0 (' + process.argv[3] + ')';
+    if (!config.modules.mapper) config.modules.mapper = {};
+    config.modules.mapper.localRepeater = process.argv[4];
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-  " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL"
+  " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL" "$USER_REPEATER"
 
   # Reset permissions so the non-root user can still edit it
   chown "$SUDO_USER_NAME:$SUDO_USER_NAME" "config.json"
@@ -130,11 +137,11 @@ fi
 
 echo "Creating systemd service file..."
 VERSION=$(grep -o '"version": "[^"]*' "$DIR/package.json" | grep -o '[0-9.]*$' || echo "1.1.0")
-SERVICE_FILE="/etc/systemd/system/weatherbot.service"
+SERVICE_FILE="/etc/systemd/system/meshbot.service"
 
 cat <<EOF > "$SERVICE_FILE"
 [Unit]
-Description=MeshCore US Weather Bot Service v$VERSION
+Description=MeshCore MeshBot Service v$VERSION
 After=network.target
 
 [Service]
@@ -155,11 +162,11 @@ chmod 644 "$SERVICE_FILE"
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
-echo "Enabling weatherbot service..."
-systemctl enable weatherbot.service
+echo "Enabling meshbot service..."
+systemctl enable meshbot.service
 
-echo "Starting weatherbot service..."
-systemctl start weatherbot.service
+echo "Starting meshbot service..."
+systemctl start meshbot.service
 
-echo "Installation complete! Weather bot service status:"
-systemctl status weatherbot.service --no-pager
+echo "Installation complete! MeshBot service status:"
+systemctl status meshbot.service --no-pager
