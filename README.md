@@ -95,7 +95,6 @@ The bot includes a unified command-line tool `meshbot` to manage the lifecycle, 
 *   `meshbot config`: Runs the interactive configuration wizard for core connection settings (serial port and enabled modules).
 *   `meshbot weather`: Runs the interactive configuration wizard for the Weather module (ZIP code, alert toggles, alarm time, and NWS User-Agent email).
 *   `meshbot mqtt`: Runs the interactive configuration wizard for the MQTT module (IATA code, preset brokers, custom brokers url/token/audience).
-*   `meshbot mapper`: Runs the interactive configuration wizard for the Network Mapper module (crawl interval, query retries, Leaflet HTML map file path).
 *   `meshbot service <action>`: Manages the Linux systemd background service:
     *   `meshbot service install`: Installs and registers the systemd daemon.
     *   `meshbot service uninstall`: Removes the systemd daemon.

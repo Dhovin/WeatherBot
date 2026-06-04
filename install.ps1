@@ -34,16 +34,13 @@ $ConfigExists = Test-Path "config.json"
 if ($ConfigExists) {
     $CurrentPort = node -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port || '')"
     $CurrentZip = node -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.weather?.zipCode || cfg.zipCode || '')"
-    $CurrentRepeater = node -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.mapper?.localRepeater || '')"
 } else {
     $CurrentPort = "COM11"
     $CurrentZip = "20001"
-    $CurrentRepeater = "Dhovin-rptr"
 }
 
 $CurrentPort = $CurrentPort.Trim()
 $CurrentZip = $CurrentZip.Trim()
-$CurrentRepeater = $CurrentRepeater.Trim()
 $CurrentEmail = "contact@example.com"
 
 # Try to list active COM ports to help the user choose
@@ -67,8 +64,7 @@ if ([string]::IsNullOrWhiteSpace($UserZip)) { $UserZip = $CurrentZip }
 $UserEmail = Read-Host "Enter email address (required for NWS API User-Agent) [$CurrentEmail]"
 if ([string]::IsNullOrWhiteSpace($UserEmail)) { $UserEmail = $CurrentEmail }
 
-$UserRepeater = Read-Host "Enter local repeater node name or ID prefix [$CurrentRepeater]"
-if ([string]::IsNullOrWhiteSpace($UserRepeater)) { $UserRepeater = $CurrentRepeater }
+
 
 # Update config.json
 node -e "
@@ -79,10 +75,8 @@ node -e "
     if (!config.modules.weather) config.modules.weather = {};
     config.modules.weather.zipCode = process.argv[2];
     config.modules.weather.userAgent = 'MeshBot/1.1.0 (' + process.argv[3] + ')';
-    if (!config.modules.mapper) config.modules.mapper = {};
-    config.modules.mapper.localRepeater = process.argv[4];
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-" "$UserPort" "$UserZip" "$UserEmail" "$UserRepeater"
+" "$UserPort" "$UserZip" "$UserEmail"
 
 Write-Host "Configuration updated successfully!"
 Write-Host "--------------------------------------------------`n"

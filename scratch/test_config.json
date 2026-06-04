@@ -75,17 +75,6 @@
           "enabled": false,
           "token": "YOUR_JWT_TOKEN_HERE"
         }
-      ]
-    },
-    "mapper": {
-      "//localRepeater": "Prioritized local repeater node name or prefix to start network crawl graph BFS traversal",
-      "localRepeater": "Dhovin-rptr",
-      "//intervalHours": "Crawl interval frequency in hours",
-      "intervalHours": 2,
-      "//maxCycles": "Maximum retry crawl cycles to handle lossy RF transmissions",
-      "maxCycles": 5,
-      "//mapHtmlPath": "File path where the generated Leaflet HTML map will be written",
-      "mapHtmlPath": "mesh_map.html"
     }
   }
 }

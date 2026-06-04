@@ -61,7 +61,6 @@ Commands:
   update                   Pull updates from GitHub and install dependencies
   weather                  Run configuration wizard for the Weather module
   mqtt                     Run configuration wizard for the MQTT module
-  mapper                   Run configuration wizard for the Network Mapper module
   help                     Show this help message
 `);
 }
@@ -337,32 +336,7 @@ async function main() {
       }
       break;
 
-    case 'mapper':
-      const mapCfg = loadConfig();
-      try {
-        const mapperMjs = join(rootDir, 'modules', 'mapper.mjs');
-        const mapperClass = (await import(`file://${mapperMjs}`)).default;
-        
-        if (typeof mapperClass.configure !== 'function') {
-          console.error("Error: Mapper module does not support interactive CLI configuration.");
-          process.exit(1);
-        }
 
-        console.log("--------------------------------------------------");
-        console.log("         Network Mapper Configuration             ");
-        console.log("--------------------------------------------------");
-
-        if (!mapCfg.modules) mapCfg.modules = {};
-        if (!mapCfg.modules.mapper) mapCfg.modules.mapper = {};
-
-        const updatedMapCfg = await mapperClass.configure(askQuestion, mapCfg.modules.mapper);
-        mapCfg.modules.mapper = updatedMapCfg;
-        saveConfig(mapCfg);
-      } catch (err) {
-        console.error("Failed to run Mapper module wizard:", err.message);
-        process.exit(1);
-      }
-      break;
 
     default:
       console.error(`Unknown command: "${cmd}". Type "meshbot help" to view usage.`);

@@ -85,10 +85,6 @@ Delegates configuration prompts to a sub-module's custom interactive configurati
     1. Local airport IATA code (for topic formatting: `meshcore/{IATA}/{PUBLIC_KEY}/packets`).
     2. Comma-separated list of preset brokers to enable (e.g. `ntxmesh`, `analyzer-us`, `meshmapper`).
     3. Custom broker URLs, credentials (JWT tokens), and authentication audience if adding a private broker.
-  - `meshbot mapper`: Invokes the `MapperModule.configure()` static wizard. Prompts for:
-    1. Network crawl interval (in hours) to control how often repeaters are polled.
-    2. Maximum query attempts per repeater to handle lossy RF links.
-    3. Output Leaflet HTML map file path (defaults to `mesh_map.html`).
 - **Behavior**:
   - Dynamically imports the module class and invokes its static `configure()` wizard hook.
   - Updates the corresponding `"modules.[moduleName]"` block in `config.json`.
@@ -96,7 +92,6 @@ Delegates configuration prompts to a sub-module's custom interactive configurati
 ```bash
 meshbot weather
 meshbot mqtt
-meshbot mapper
 ```
 
 ---

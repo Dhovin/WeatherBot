@@ -99,8 +99,6 @@ if [ -t 1 ]; then
 
   CURRENT_ZIP=$($NODE_PATH -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.weather?.zipCode || cfg.zipCode || '')")
   CURRENT_EMAIL="contact@example.com"
-  CURRENT_REPEATER=$($NODE_PATH -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.mapper?.localRepeater || '')")
-  CURRENT_REPEATER=$(echo "$CURRENT_REPEATER" | tr -d '\r' | tr -d ' ')
 
   read -p "Enter serial port for MeshCore device [$CURRENT_PORT]: " USER_PORT < /dev/tty
   USER_PORT=${USER_PORT:-$CURRENT_PORT}
@@ -111,8 +109,7 @@ if [ -t 1 ]; then
   read -p "Enter email address (required for NWS API User-Agent) [$CURRENT_EMAIL]: " USER_EMAIL < /dev/tty
   USER_EMAIL=${USER_EMAIL:-$CURRENT_EMAIL}
 
-  read -p "Enter local repeater node name or ID prefix [$CURRENT_REPEATER]: " USER_REPEATER < /dev/tty
-  USER_REPEATER=${USER_REPEATER:-$CURRENT_REPEATER}
+
 
   # Update config.json
   $NODE_PATH -e "
@@ -123,10 +120,8 @@ if [ -t 1 ]; then
     if (!config.modules.weather) config.modules.weather = {};
     config.modules.weather.zipCode = process.argv[2];
     config.modules.weather.userAgent = 'MeshBot/1.1.0 (' + process.argv[3] + ')';
-    if (!config.modules.mapper) config.modules.mapper = {};
-    config.modules.mapper.localRepeater = process.argv[4];
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-  " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL" "$USER_REPEATER"
+  " "$USER_PORT" "$USER_ZIP" "$USER_EMAIL"
 
   # Reset permissions so the non-root user can still edit it
   chown "$SUDO_USER_NAME:$SUDO_USER_NAME" "config.json"
