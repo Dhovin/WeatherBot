@@ -1,6 +1,8 @@
 {
   "//port": "Serial port connected to your MeshCore radio device (e.g. COM11, /dev/ttyACM0)",
   "port": "COM11",
+  "//name": "Friendly name representing the bot's identity",
+  "name": "MeshBot",
   "//channels": "Map of channel categories to channel names defined on the radio node",
   "channels": {
     "alerts": "#weather",

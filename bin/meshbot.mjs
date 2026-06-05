@@ -332,6 +332,10 @@ async function main() {
       console.log("       MeshBot Core Configuration Wizard          ");
       console.log("--------------------------------------------------");
       
+      const defaultName = coreCfg.name || "MeshBot";
+      const botNameInput = await askQuestion(`Enter a name for the bot [${defaultName}]: `);
+      coreCfg.name = botNameInput || defaultName;
+
       const chosenPort = await runPortSelection();
       coreCfg.port = chosenPort;
 

@@ -34,13 +34,16 @@ $ConfigExists = Test-Path "config.json"
 if ($ConfigExists) {
     $CurrentPort = node -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).port || '')"
     $CurrentZip = node -e "import fs from 'fs'; const cfg = JSON.parse(fs.readFileSync('config.json')); console.log(cfg.modules?.weather?.zipCode || cfg.zipCode || '')"
+    $CurrentName = node -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('config.json')).name || 'MeshBot')"
 } else {
     $CurrentPort = "COM11"
     $CurrentZip = "20001"
+    $CurrentName = "MeshBot"
 }
 
 $CurrentPort = $CurrentPort.Trim()
 $CurrentZip = $CurrentZip.Trim()
+$CurrentName = $CurrentName.Trim()
 $CurrentEmail = "contact@example.com"
 
 # Try to list active COM ports to help the user choose
@@ -54,6 +57,9 @@ if ($SerialPorts.Count -gt 0) {
     Write-Host " - No active COM ports detected (make sure device is plugged in)"
 }
 Write-Host ""
+
+$UserName = Read-Host "Enter a name for the bot [$CurrentName]"
+if ([string]::IsNullOrWhiteSpace($UserName)) { $UserName = $CurrentName }
 
 $UserPort = Read-Host "Enter serial port for MeshCore device [$CurrentPort]"
 if ([string]::IsNullOrWhiteSpace($UserPort)) { $UserPort = $CurrentPort }
@@ -75,8 +81,9 @@ node -e "
     if (!config.modules.weather) config.modules.weather = {};
     config.modules.weather.zipCode = process.argv[2];
     config.modules.weather.userAgent = 'MeshBot/1.1.0 (' + process.argv[3] + ')';
+    config.name = process.argv[4];
     fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-" "$UserPort" "$UserZip" "$UserEmail"
+" "$UserPort" "$UserZip" "$UserEmail" "$UserName"
 
 Write-Host "Configuration updated successfully!"
 Write-Host "--------------------------------------------------`n"

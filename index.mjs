@@ -14,6 +14,7 @@ for (const arg of process.argv.slice(2)) {
   }
 }
 const config = JSON.parse(readFileSync(configPath));
+const botName = config.name || "MeshBot";
 
 // Auto-detect serial port if the configured one is not available
 async function resolveSerialPort(configuredPort) {
@@ -46,7 +47,7 @@ const nonConfigArgs = process.argv.slice(2).filter(arg => !arg.endsWith('.json')
 const configuredPort = nonConfigArgs[0] ?? config.port;
 const port = await resolveSerialPort(configuredPort);
 
-console.log(`MeshBot v${VERSION} starting...`);
+console.log(`${botName} v${VERSION} starting...`);
 console.log(`Connecting to ${port}`);
 const connection = new NodeJSSerialConnection(port);
 
@@ -161,7 +162,7 @@ async function dispatchMessage(text, replyCallback, contact = null, info = {}) {
 
   // Core Host Commands
   if (lowerText === 'version' || lowerText === 'info') {
-    await replyCallback(`MeshBot v${VERSION}`);
+    await replyCallback(`${botName} v${VERSION}`);
     return;
   }
 
