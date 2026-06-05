@@ -432,6 +432,7 @@ export default class WeatherModule {
     if (!contact) {
       const weatherIdx = this.host.channels.weather?.channelIdx;
       if (weatherIdx === undefined || info.channelIdx !== weatherIdx) {
+        console.log(`[Weather] Ignored channel message on index ${info.channelIdx} (weather channel index is ${weatherIdx})`);
         return; // Ignore channel messages not on the weather channel
       }
     }

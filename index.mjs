@@ -202,6 +202,7 @@ connection.on(Constants.PushCodes.MsgWaiting, async () => {
   try {
     const waitingMessages = await connection.getWaitingMessages();
     for (const message of waitingMessages) {
+      console.log(`[Host] Received message: "${message.text}" (channelIdx: ${message.channelIdx})`);
       if (message.channelIdx === 0xFF) {
         // Direct Message (DM)
         const contact = await connection.findContactByPublicKeyPrefix(message.pubKeyPrefix);
