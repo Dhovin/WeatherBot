@@ -364,7 +364,7 @@ async function main() {
                   if (!coreCfg.modules) coreCfg.modules = {};
                   if (!coreCfg.modules[modName]) coreCfg.modules[modName] = {};
                   
-                  const updatedModCfg = await modClass.configure(askQuestion, coreCfg.modules[modName]);
+                  const updatedModCfg = await modClass.configure(askQuestion, coreCfg.modules[modName], selectMultipleOptions);
                   coreCfg.modules[modName] = updatedModCfg;
                 }
               }
@@ -431,7 +431,7 @@ async function main() {
         if (!wCfg.modules) wCfg.modules = {};
         if (!wCfg.modules.weather) wCfg.modules.weather = {};
 
-        const updatedWeatherCfg = await weatherClass.configure(askQuestion, wCfg.modules.weather);
+        const updatedWeatherCfg = await weatherClass.configure(askQuestion, wCfg.modules.weather, selectMultipleOptions);
         wCfg.modules.weather = updatedWeatherCfg;
         saveConfig(wCfg);
       } catch (err) {
@@ -458,7 +458,7 @@ async function main() {
         if (!mCfg.modules) mCfg.modules = {};
         if (!mCfg.modules.mqtt) mCfg.modules.mqtt = {};
 
-        const updatedMqttCfg = await mqttClass.configure(askQuestion, mCfg.modules.mqtt);
+        const updatedMqttCfg = await mqttClass.configure(askQuestion, mCfg.modules.mqtt, selectMultipleOptions);
         mCfg.modules.mqtt = updatedMqttCfg;
         saveConfig(mCfg);
       } catch (err) {

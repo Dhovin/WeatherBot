@@ -117,7 +117,7 @@ async function autoDetectUrl(brokerUrl) {
 }
 
 export default class MqttModule {
-  static async configure(askQuestion, currentConfig) {
+  static async configure(askQuestion, currentConfig, selectMultipleOptions) {
     const config = { ...currentConfig };
 
     const defaultIata = config.iataCode || "ORD";
@@ -129,22 +129,35 @@ export default class MqttModule {
     config.privateKey = pKey || defaultPrivateKey;
 
     // Prompts for presets
-    const presetNames = Object.keys(PRESETS).join(', ');
-    console.log(`\nAvailable presets: ${presetNames}`);
-    
-    const defaultEnabledPresets = (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]).join(', ');
-    const presetsInput = await askQuestion(`Enter preset brokers to enable (comma-separated) [${defaultEnabledPresets}]: `);
-    
-    const selectedPresets = presetsInput
-      ? presetsInput.split(',').map(s => s.trim().toLowerCase()).filter(s => PRESETS[s])
-      : (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]);
+    let selectedPresets;
+    if (typeof selectMultipleOptions === 'function') {
+      const allPresets = Object.keys(PRESETS);
+      const defaultEnabledPresets = config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"];
+      selectedPresets = await selectMultipleOptions(
+        "Select Preset MQTT Brokers to Enable",
+        allPresets,
+        defaultEnabledPresets
+      );
+    } else {
+      const presetNames = Object.keys(PRESETS).join(', ');
+      console.log(`\nAvailable presets: ${presetNames}`);
+      
+      const defaultEnabledPresets = (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]).join(', ');
+      const presetsInput = await askQuestion(`Enter preset brokers to enable (comma-separated) [${defaultEnabledPresets}]: `);
+      
+      selectedPresets = presetsInput
+        ? presetsInput.split(',').map(s => s.trim().toLowerCase()).filter(s => PRESETS[s])
+        : (config.enabledPresets || ["ntxmesh", "meshmapper", "analyzer-us"]);
+    }
     
     config.enabledPresets = selectedPresets;
 
     // Optional custom broker
-    const customPrompt = config.customBrokers && config.customBrokers.length > 0 ? "y" : "n";
-    const addCustom = await askQuestion(`Configure custom/private MQTT broker? (y/n) [${customPrompt}]: `);
-    if (addCustom.toLowerCase().startsWith('y')) {
+    const hasEnabledCustom = config.customBrokers && config.customBrokers.length > 0 && config.customBrokers.some(cb => cb.enabled);
+    const customPrompt = hasEnabledCustom ? "y" : "n";
+    const addCustomInput = await askQuestion(`Configure custom/private MQTT broker? (y/n) [${customPrompt}]: `);
+    const addCustom = addCustomInput ? addCustomInput.toLowerCase().startsWith('y') : (customPrompt === 'y');
+    if (addCustom) {
       const existingCustom = config.customBrokers?.[0] || {};
       const customUrl = await askQuestion(`Enter custom broker URL or Host (e.g. mqtt://localhost:1883 or localhost:1883) [${existingCustom.url || ''}]: `);
       if (customUrl) {
