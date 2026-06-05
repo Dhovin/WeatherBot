@@ -97,6 +97,7 @@ function selectOption(title, options) {
     readline.emitKeypressEvents(process.stdin);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
+      process.stdin.resume();
     }
     
     const onKeypress = (str, key) => {
@@ -124,6 +125,7 @@ function selectOption(title, options) {
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
+      process.stdin.pause();
     }
 
     process.stdin.on('keypress', onKeypress);
@@ -237,6 +239,7 @@ function selectMultipleOptions(title, options, defaultSelected = []) {
     readline.emitKeypressEvents(process.stdin);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
+      process.stdin.resume();
     }
     
     const onKeypress = (str, key) => {
@@ -268,6 +271,7 @@ function selectMultipleOptions(title, options, defaultSelected = []) {
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
+      process.stdin.pause();
     }
 
     process.stdin.on('keypress', onKeypress);
@@ -343,8 +347,37 @@ async function main() {
         console.log("No modules found in modules directory.");
       }
 
+      // Prompt to configure the selected modules in sequence
+      if (coreCfg.enabledModules && coreCfg.enabledModules.length > 0) {
+        console.log("--------------------------------------------------");
+        const configureNow = await askQuestion("Would you like to run the configuration wizards for the enabled modules now? (y/n) [y]: ");
+        if (!configureNow || configureNow.toLowerCase().startsWith('y')) {
+          for (const modName of coreCfg.enabledModules) {
+            try {
+              const modMjs = join(rootDir, 'modules', `${modName}.mjs`);
+              if (existsSync(modMjs)) {
+                const modClass = (await import(`file://${modMjs}`)).default;
+                if (modClass && typeof modClass.configure === 'function') {
+                  console.log("\n--------------------------------------------------");
+                  console.log(`          ${modName.toUpperCase()} Module Configuration               `);
+                  console.log("--------------------------------------------------");
+                  if (!coreCfg.modules) coreCfg.modules = {};
+                  if (!coreCfg.modules[modName]) coreCfg.modules[modName] = {};
+                  
+                  const updatedModCfg = await modClass.configure(askQuestion, coreCfg.modules[modName]);
+                  coreCfg.modules[modName] = updatedModCfg;
+                }
+              }
+            } catch (err) {
+              console.error(`Failed to configure module ${modName}:`, err.message);
+            }
+          }
+          console.log("\n--------------------------------------------------");
+        }
+      }
+
       saveConfig(coreCfg);
-      break;
+      process.exit(0);
 
     case 'service':
       const action = args[1] ? args[1].toLowerCase() : '';
