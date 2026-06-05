@@ -288,7 +288,8 @@ export default class MqttModule {
           url: preset.url,
           audience: preset.audience,
           requiresAuth: preset.requiresAuth,
-          token: this.config.token // can fall back to global token if set
+          token: this.config.token, // can fall back to global token if set
+          keepalive: preset.keepalive
         });
       }
     }
@@ -300,7 +301,8 @@ export default class MqttModule {
           url: cb.url,
           audience: cb.audience,
           requiresAuth: cb.requiresAuth,
-          token: cb.token
+          token: cb.token,
+          keepalive: cb.keepalive
         });
       }
     }
@@ -311,8 +313,10 @@ export default class MqttModule {
         // Run auto-detection probe sequence if host lacks protocol prefix
         const finalUrl = await autoDetectUrl(target.url);
         
+        const isWebSocket = finalUrl.startsWith('ws://') || finalUrl.startsWith('wss://');
         const options = {
-          keepalive: 60,
+          protocolVersion: 4,
+          keepalive: target.keepalive !== undefined ? target.keepalive : (isWebSocket ? 0 : 60),
           reconnectPeriod: 5000,
           connectTimeout: 30 * 1000,
           rejectUnauthorized: false,
@@ -366,6 +370,21 @@ export default class MqttModule {
     this.host.connection.on('rx', (frame) => this.forwardFrame('rx', frame));
     this.host.connection.on('tx', (frame) => this.forwardFrame('tx', frame));
 
+    // Start periodic status publish (every 60 seconds) to keep connections alive
+    this.pingInterval = setInterval(() => {
+      const statusTopic = `meshcore/${iata}/${this.publicKeyHex}/status`;
+      const payload = JSON.stringify({
+        status: "online",
+        timestamp: new Date().toISOString(),
+        name: this.nodeName || "MeshBot Observer"
+      });
+      for (const { client } of this.clients) {
+        if (client.connected) {
+          client.publish(statusTopic, payload, { retain: true });
+        }
+      }
+    }, 60 * 1000);
+
     // Start periodic JWT token refresh interval (every 6 hours)
     this.refreshInterval = setInterval(async () => {
       console.log("[MQTT Forwarder] Refreshing active MQTT JWT tokens...");
@@ -391,6 +410,9 @@ export default class MqttModule {
     this.shutdownHandler = () => {
       if (this.refreshInterval) {
         clearInterval(this.refreshInterval);
+      }
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
       }
       console.log("\n[MQTT Forwarder] Gracefully disconnecting from brokers...");
       const statusTopic = `meshcore/${iata}/${this.publicKeyHex}/status`;
