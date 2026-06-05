@@ -388,7 +388,6 @@ export default class MqttModule {
       }
     }, 6 * 60 * 60 * 1000);
 
-    // Register shutdown hooks
     this.shutdownHandler = () => {
       if (this.refreshInterval) {
         clearInterval(this.refreshInterval);
@@ -396,6 +395,12 @@ export default class MqttModule {
       console.log("\n[MQTT Forwarder] Gracefully disconnecting from brokers...");
       const statusTopic = `meshcore/${iata}/${this.publicKeyHex}/status`;
       
+      const activeClients = this.clients.filter(c => c.client.connected);
+      if (activeClients.length === 0) {
+        process.exit(0);
+      }
+
+      let closedCount = 0;
       for (const { client, target } of this.clients) {
         if (client.connected) {
           client.publish(statusTopic, JSON.stringify({
@@ -403,13 +408,24 @@ export default class MqttModule {
             timestamp: new Date().toISOString(),
             name: this.nodeName || "MeshBot Observer"
           }), { retain: true }, () => {
-            client.end();
-            console.log(`[MQTT Forwarder] Closed connection to ${target.name}`);
+            client.end(false, () => {
+              console.log(`[MQTT Forwarder] Closed connection to ${target.name}`);
+              closedCount++;
+              if (closedCount === activeClients.length) {
+                process.exit(0);
+              }
+            });
           });
         } else {
-          client.end();
+          client.end(true);
         }
       }
+
+      // Fallback timeout to guarantee exit even if broker publish hangs
+      setTimeout(() => {
+        console.log("[MQTT Forwarder] Shutdown timeout reached. Forcing exit.");
+        process.exit(0);
+      }, 1500);
     };
 
     process.on('SIGINT', this.shutdownHandler);

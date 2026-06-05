@@ -156,8 +156,8 @@ async function dispatchMessage(text, replyCallback, contact = null, info = {}) {
   const safeText = text.length > 1000 ? text.slice(0, 1000) : text;
   let cleanText = safeText.trim();
   
-  // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244")
-  cleanText = cleanText.replace(/^[A-Za-z0-9_.-]+:\s+/, '').trim();
+  // Strip MeshCore username prefix (e.g. "Dhovin: 76244" -> "76244", supports emojis/spaces)
+  cleanText = cleanText.replace(/^[^:\r\n]+:\s+/, '').trim();
   const lowerText = cleanText.toLowerCase();
 
   // Core Host Commands
@@ -196,6 +196,54 @@ connection.on('connected', async () => {
 
   // Load modules dynamically
   await loadModules();
+
+  // Set up periodic node advertisements
+  const zeroHopMins = config.zeroHopAdvertMins !== undefined ? config.zeroHopAdvertMins : 240;
+  const floodHours = config.floodAdvertHours !== undefined ? config.floodAdvertHours : 23;
+
+  if (zeroHopMins > 0) {
+    console.log(`[Host] Scheduling Zero-Hop advertisements every ${zeroHopMins} minutes.`);
+    // Trigger once on startup after connection is initialized
+    setTimeout(async () => {
+      try {
+        console.log("[Host] Sending initial Zero-Hop advertisement...");
+        await connection.sendCommandSendSelfAdvert(Constants.SelfAdvertTypes.ZeroHop);
+      } catch (err) {
+        console.error("[Host] Failed to send initial Zero-Hop advertisement:", err.message);
+      }
+    }, 5000);
+
+    setInterval(async () => {
+      try {
+        console.log("[Host] Sending periodic Zero-Hop advertisement...");
+        await connection.sendCommandSendSelfAdvert(Constants.SelfAdvertTypes.ZeroHop);
+      } catch (err) {
+        console.error("[Host] Failed to send periodic Zero-Hop advertisement:", err.message);
+      }
+    }, zeroHopMins * 60 * 1000);
+  }
+
+  if (floodHours > 0) {
+    console.log(`[Host] Scheduling Flood advertisements every ${floodHours} hours.`);
+    // Trigger once on startup after connection is initialized
+    setTimeout(async () => {
+      try {
+        console.log("[Host] Sending initial Flood advertisement...");
+        await connection.sendCommandSendSelfAdvert(Constants.SelfAdvertTypes.Flood);
+      } catch (err) {
+        console.error("[Host] Failed to send initial Flood advertisement:", err.message);
+      }
+    }, 10000);
+
+    setInterval(async () => {
+      try {
+        console.log("[Host] Sending periodic Flood advertisement...");
+        await connection.sendCommandSendSelfAdvert(Constants.SelfAdvertTypes.Flood);
+      } catch (err) {
+        console.error("[Host] Failed to send periodic Flood advertisement:", err.message);
+      }
+    }, floodHours * 60 * 60 * 1000);
+  }
 });
 
 connection.on(Constants.PushCodes.MsgWaiting, async () => {

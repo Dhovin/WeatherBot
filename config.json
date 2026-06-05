@@ -3,6 +3,10 @@
   "port": "COM11",
   "//name": "Friendly name representing the bot's identity",
   "name": "MeshBot",
+  "//zeroHopAdvertMins": "Interval in minutes for zero-hop advertisements (0 to disable)",
+  "zeroHopAdvertMins": 240,
+  "//floodAdvertHours": "Interval in hours for flood advertisements (0 to disable)",
+  "floodAdvertHours": 23,
   "//channels": "Map of channel categories to channel names defined on the radio node",
   "channels": {
     "alerts": "#weather",

@@ -339,6 +339,14 @@ async function main() {
       const chosenPort = await runPortSelection();
       coreCfg.port = chosenPort;
 
+      const defaultZeroMins = coreCfg.zeroHopAdvertMins !== undefined ? coreCfg.zeroHopAdvertMins : 240;
+      const zeroHopInput = await askQuestion(`Enter Zero-Hop advertisement interval in minutes (0 to disable) [${defaultZeroMins}]: `);
+      coreCfg.zeroHopAdvertMins = zeroHopInput !== "" ? parseInt(zeroHopInput, 10) : defaultZeroMins;
+
+      const defaultFloodHours = coreCfg.floodAdvertHours !== undefined ? coreCfg.floodAdvertHours : 23;
+      const floodInput = await askQuestion(`Enter Flood advertisement interval in hours (0 to disable) [${defaultFloodHours}]: `);
+      coreCfg.floodAdvertHours = floodInput !== "" ? parseInt(floodInput, 10) : defaultFloodHours;
+
       const availableModules = await getAvailableModules();
       if (availableModules.length > 0) {
         const selectedModules = await selectMultipleOptions(
