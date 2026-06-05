@@ -201,29 +201,32 @@ connection.on('connected', async () => {
 connection.on(Constants.PushCodes.MsgWaiting, async () => {
   try {
     const waitingMessages = await connection.getWaitingMessages();
-    for (const message of waitingMessages) {
-      console.log(`[Host] Received message: "${message.text}" (channelIdx: ${message.channelIdx})`);
-      if (message.channelIdx === 0xFF) {
-        // Direct Message (DM)
-        const contact = await connection.findContactByPublicKeyPrefix(message.pubKeyPrefix);
+    for (const wrapper of waitingMessages) {
+      if (wrapper.contactMessage) {
+        const msg = wrapper.contactMessage;
+        console.log(`[Host] Received DM: "${msg.text}"`);
+        
+        const contact = await connection.findContactByPublicKeyPrefix(msg.pubKeyPrefix);
         if (!contact) {
           console.log("Did not find contact for received message");
           continue;
         }
-        await dispatchMessage(message.text, async (replyText) => {
+        await dispatchMessage(msg.text, async (replyText) => {
           await host.sendDM(contact.publicKey, replyText);
           console.log(`Sent contact reply: ${replyText}`);
-        }, contact, { channelIdx: message.channelIdx });
-      } else {
-        // Channel Message
-        await dispatchMessage(message.text, async (replyText) => {
+        }, contact, { channelIdx: 0xFF });
+      } else if (wrapper.channelMessage) {
+        const msg = wrapper.channelMessage;
+        console.log(`[Host] Received channel message: "${msg.text}" (channelIdx: ${msg.channelIdx})`);
+        
+        await dispatchMessage(msg.text, async (replyText) => {
           try {
-            await host.sendChannelMessage(message.channelIdx, replyText);
-            console.log(`Sent channel reply to index ${message.channelIdx}: ${replyText}`);
+            await host.sendChannelMessage(msg.channelIdx, replyText);
+            console.log(`Sent channel reply to index ${msg.channelIdx}: ${replyText}`);
           } catch (err) {
-            console.error(`Failed to send channel reply to index ${message.channelIdx}:`, err);
+            console.error(`Failed to send channel reply to index ${msg.channelIdx}:`, err);
           }
-        }, null, { channelIdx: message.channelIdx });
+        }, null, { channelIdx: msg.channelIdx });
       }
     }
   } catch (e) {

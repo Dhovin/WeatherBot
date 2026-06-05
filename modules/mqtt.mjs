@@ -312,6 +312,7 @@ export default class MqttModule {
         const finalUrl = await autoDetectUrl(target.url);
         
         const options = {
+          keepalive: 60,
           reconnectPeriod: 5000,
           connectTimeout: 30 * 1000,
           rejectUnauthorized: false,
