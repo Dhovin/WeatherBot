@@ -75,6 +75,7 @@
           "enabled": false,
           "token": "YOUR_JWT_TOKEN_HERE"
         }
+      ]
     }
   }
 }
