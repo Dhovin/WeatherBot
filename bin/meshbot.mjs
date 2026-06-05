@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import readline from 'readline';
 
@@ -181,6 +181,99 @@ async function runPortSelection() {
   }
 }
 
+// Dynamically scan and return available module plugin names
+async function getAvailableModules() {
+  const modulesDir = join(rootDir, 'modules');
+  if (!existsSync(modulesDir)) return [];
+  const files = readdirSync(modulesDir).filter(f => f.endsWith('.mjs'));
+  const available = [];
+  
+  for (const file of files) {
+    const name = file.replace('.mjs', '');
+    try {
+      const fileUrl = pathToFileURL(join(modulesDir, file)).href;
+      const modClass = (await import(fileUrl)).default;
+      if (modClass && typeof modClass === 'function' && modClass.prototype) {
+        if (typeof modClass.prototype.init === 'function' || typeof modClass.prototype.handleMessage === 'function') {
+          available.push(name);
+        }
+      }
+    } catch (err) {
+      // Skip files that are not modules
+    }
+  }
+  return available;
+}
+
+// Interactive multi-select checkbox menu in CLI
+function selectMultipleOptions(title, options, defaultSelected = []) {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve(defaultSelected);
+      return;
+    }
+
+    let selectedIndex = 0;
+    const checked = options.map(opt => defaultSelected.includes(opt));
+
+    function render() {
+      // Clear console screen cleanly and move cursor to top-left
+      process.stdout.write('\x1bc'); 
+      console.log("\x1b[36m==================================================\x1b[0m");
+      console.log(`\x1b[1m\x1b[35m  ${title}\x1b[0m`);
+      console.log("\x1b[36m==================================================\x1b[0m");
+      
+      options.forEach((opt, idx) => {
+        const checkbox = checked[idx] ? "\x1b[32m[●]\x1b[0m" : "[ ]";
+        const cursor = idx === selectedIndex ? "\x1b[35m➔\x1b[0m " : "  ";
+        console.log(` ${cursor}${checkbox} ${opt}`);
+      });
+      console.log("\x1b[36m--------------------------------------------------\x1b[0m");
+      console.log("\x1b[90mUse Arrow Keys (↑/↓) to navigate, Space to toggle, Enter to submit.\x1b[0m");
+    }
+
+    render();
+
+    readline.emitKeypressEvents(process.stdin);
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    
+    const onKeypress = (str, key) => {
+      if (key) {
+        if (key.ctrl && key.name === 'c') {
+          cleanup();
+          process.exit(0);
+        }
+        if (key.name === 'up') {
+          selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+          render();
+        } else if (key.name === 'down') {
+          selectedIndex = (selectedIndex + 1) % options.length;
+          render();
+        } else if (key.name === 'space' || str === ' ') {
+          checked[selectedIndex] = !checked[selectedIndex];
+          render();
+        } else if (key.name === 'return' || key.name === 'enter') {
+          cleanup();
+          process.stdout.write('\x1bc'); 
+          const result = options.filter((_, idx) => checked[idx]);
+          resolve(result);
+        }
+      }
+    };
+
+    function cleanup() {
+      process.stdin.removeListener('keypress', onKeypress);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+    }
+
+    process.stdin.on('keypress', onKeypress);
+  });
+}
+
 // Main execution
 async function main() {
   const args = process.argv.slice(2);
@@ -235,14 +328,19 @@ async function main() {
       console.log("       MeshBot Core Configuration Wizard          ");
       console.log("--------------------------------------------------");
       
-      const defaultPort = coreCfg.port || "COM11";
-      const inputPort = await askQuestion(`Enter serial port for MeshCore device [${defaultPort}]: `);
-      coreCfg.port = inputPort || defaultPort;
+      const chosenPort = await runPortSelection();
+      coreCfg.port = chosenPort;
 
-      const enabledStr = (coreCfg.enabledModules || []).join(', ');
-      const inputModules = await askQuestion(`Enter enabled modules comma-separated (e.g. weather, ping) [${enabledStr}]: `);
-      if (inputModules) {
-        coreCfg.enabledModules = inputModules.split(',').map(s => s.trim()).filter(Boolean);
+      const availableModules = await getAvailableModules();
+      if (availableModules.length > 0) {
+        const selectedModules = await selectMultipleOptions(
+          "Select Enabled Modules",
+          availableModules,
+          coreCfg.enabledModules || []
+        );
+        coreCfg.enabledModules = selectedModules;
+      } else {
+        console.log("No modules found in modules directory.");
       }
 
       saveConfig(coreCfg);
