@@ -56,10 +56,10 @@ const activeModules = [];
 
 let sendQueue = Promise.resolve();
 
-async function queueSend(sendFn, description = "Message") {
-  const maxRetries = 3;
+async function queueSend(sendFn, description = "Message", waitForConfirmation = true) {
+  const maxRetries = waitForConfirmation ? 3 : 1;
   let attempt = 0;
-  let confirmed = false;
+  let confirmed = !waitForConfirmation;
 
   const runAttempt = async () => {
     attempt++;
@@ -76,24 +76,30 @@ async function queueSend(sendFn, description = "Message") {
         }
       };
 
-      // Set up confirmation listener
-      confirmedListener = (data) => {
-        console.log(`[Host] Send confirmed for ${description} (ackCode: ${data.ackCode}, roundTrip: ${data.roundTrip}ms)`);
-        confirmed = true;
-        cleanup();
-        resolve(true);
-      };
-      connection.on(Constants.PushCodes.SendConfirmed, confirmedListener);
+      if (waitForConfirmation) {
+        // Set up confirmation listener
+        confirmedListener = (data) => {
+          console.log(`[Host] Send confirmed for ${description} (ackCode: ${data.ackCode}, roundTrip: ${data.roundTrip}ms)`);
+          confirmed = true;
+          cleanup();
+          resolve(true);
+        };
+        connection.on(Constants.PushCodes.SendConfirmed, confirmedListener);
 
-      // Set up timeout (15 seconds)
-      timeoutTimer = setTimeout(() => {
-        console.warn(`[Host] Send timeout (15s) for ${description} (Attempt ${attempt}/${maxRetries})`);
-        cleanup();
-        resolve(false);
-      }, 15000);
+        // Set up timeout (15 seconds)
+        timeoutTimer = setTimeout(() => {
+          console.warn(`[Host] Send timeout (15s) for ${description} (Attempt ${attempt}/${maxRetries})`);
+          cleanup();
+          resolve(false);
+        }, 15000);
+      }
 
       try {
         await sendFn();
+        if (!waitForConfirmation) {
+          console.log(`[Host] Sent (no confirmation needed): ${description}`);
+          resolve(true);
+        }
       } catch (err) {
         console.error(`[Host] Serial send error for ${description}:`, err.message);
         cleanup();
@@ -111,7 +117,7 @@ async function queueSend(sendFn, description = "Message") {
       await runAttempt();
     }
 
-    if (!confirmed) {
+    if (waitForConfirmation && !confirmed) {
       console.warn(`[Host] Warning: ${description} was sent but not confirmed by any repeater after ${maxRetries} attempts.`);
     }
   });
@@ -134,14 +140,16 @@ const host = {
     const shortPub = Buffer.from(publicKey).toString('hex').slice(0, 8);
     await queueSend(
       () => connection.sendTextMessage(publicKey, text, Constants.TxtTypes.Plain),
-      `DM to ${shortPub}`
+      `DM to ${shortPub}`,
+      true
     );
   },
   
   async sendChannelMessage(channelIdx, text) {
     await queueSend(
       () => connection.sendChannelTextMessage(channelIdx, text),
-      `Channel msg on ch index ${channelIdx}`
+      `Channel msg on ch index ${channelIdx}`,
+      false
     );
   },
   
