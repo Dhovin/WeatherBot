@@ -7,7 +7,7 @@ const PRESETS = {
   "analyzer-us": { name: "LetsMesh USA Analyzer", url: "wss://mqtt-us-v1.letsmesh.net:443/mqtt", audience: "mqtt-us-v1.letsmesh.net", requiresAuth: true },
   "analyzer-eu": { name: "LetsMesh EU Analyzer", url: "wss://mqtt-eu-v1.letsmesh.net:443/mqtt", audience: "mqtt-eu-v1.letsmesh.net", requiresAuth: true },
   "nz-analyzer": { name: "Baird NZ Analyzer", url: "wss://meshcore-mqtt-1.baird.io:443" },
-  "meshmapper": { name: "MeshMapper Server", url: "wss://mqtt.meshmapper.cc:443/mqtt", audience: "mqtt.meshmapper.cc", requiresAuth: true },
+  "meshmapper": { name: "MeshMapper Server", url: "wss://mqtt.meshmapper.net:443/mqtt", audience: "mqtt.meshmapper.net", requiresAuth: true },
   "meshrank": { name: "MeshRank", url: "mqtts://meshrank.net:8883" },
   "waev": { name: "Waev", url: "wss://mqtt.waev.app:443/mqtt" },
   "meshomatic": { name: "Meshomatic US East", url: "wss://us-east.meshomatic.net:443/mqtt" },
